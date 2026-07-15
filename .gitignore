@@ -1,0 +1,25 @@
+# Python virtualenv & compiled files
+backend/venv/
+backend/app/venv/
+backend/__pycache__/
+backend/app/__pycache__/
+backend/app/*/__pycache__/
+*.pyc
+
+# Local config & secret environment variables
+backend/.env
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# Node packages & build outputs
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+*.local
+
+# IDE/system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
