@@ -1,35 +1,6 @@
-/**
- * complaintService.js
- * Single source of truth for all complaint data operations.
- * Persists to localStorage under COMPLAINTS_KEY.
- *
- * Schema:
- * {
- *   id          : "CMP-0001"
- *   citizenId   : aadhaar string
- *   citizenName : string
- *   citizenPhone: string
- *   citizenEmail: string
- *   citizenAddress: string
- *   title       : string
- *   description : string
- *   area        : string
- *   landmark    : string | null
- *   pinCode     : string | null
- *   department  : string
- *   priority    : string
- *   status      : "Submitted" | "Assigned" | "In Progress" | "Resolved"
- *   imagePreview: data-URL string | null
- *   latitude    : number
- *   longitude   : number
- *   evidence_verdict: "MATCH" | "MISMATCH" | "UNCERTAIN" | null
- *   evidence_reason: string | null
- *   evidence_confidence: number | null
- *   createdAt   : ISO string
- *   updatedAt   : ISO string
- * }
- */
+import axios from 'axios';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 const COMPLAINTS_KEY = 'complaints';
 
 // ─── Seed Data ────────────────────────────────────────────────────────────────
@@ -46,8 +17,13 @@ const SEED_COMPLAINTS = [
     area: "Shivaji Nagar Bus Stand, Pune",
     landmark: "Near Bus Stand",
     pinCode: "411005",
-    department: "Water Supply",
+    department: "Water Supply Department",
+    category: "Water Leakage / Deficit",
     priority: "High",
+    ai_severity: "Critical",
+    ai_confidence: 0.95,
+    ai_reason: "Complaint mentions massive pipeline leakage wasting millions of liters.",
+    ai_keywords: ["water", "pipeline", "leakage"],
     status: "In Progress",
     imagePreview: null,
     latitude: 18.5312,
@@ -68,8 +44,13 @@ const SEED_COMPLAINTS = [
     area: "Kothrud, Pune",
     landmark: "Opposite D-Mart",
     pinCode: "411038",
-    department: "Street Lights",
+    department: "Electricity Department",
+    category: "Power Issue",
     priority: "Medium",
+    ai_severity: "Moderate",
+    ai_confidence: 0.88,
+    ai_reason: "Dark road reported causing unsafe walking conditions.",
+    ai_keywords: ["street light", "dark road"],
     status: "Submitted",
     imagePreview: null,
     latitude: 18.5074,
@@ -90,8 +71,13 @@ const SEED_COMPLAINTS = [
     area: "Viman Nagar, Pune",
     landmark: "Near Phoenix Mall",
     pinCode: "411014",
-    department: "Roads",
+    department: "Roads and Drainage",
+    category: "Water Logging and Road Damage",
     priority: "High",
+    ai_severity: "Critical",
+    ai_confidence: 0.92,
+    ai_reason: "Deep potholes causing immediate road danger and vehicle damage.",
+    ai_keywords: ["potholes", "road", "vehicular damage"],
     status: "Assigned",
     imagePreview: null,
     latitude: 18.5679,
@@ -112,8 +98,13 @@ const SEED_COMPLAINTS = [
     area: "Hadapsar, Pune",
     landmark: "Near Noble Hospital",
     pinCode: "411028",
-    department: "Sanitation",
+    department: "Solid Waste Management",
+    category: "Garbage Accumulation",
     priority: "Low",
+    ai_severity: "Minor",
+    ai_confidence: 0.90,
+    ai_reason: "Roadside garbage accumulation attracting stray animals.",
+    ai_keywords: ["garbage", "dump", "roadside"],
     status: "Resolved",
     imagePreview: null,
     latitude: 18.5089,
@@ -126,48 +117,70 @@ const SEED_COMPLAINTS = [
 
 // ─── AI Keyword Classification Rules ──────────────────────────────────────────
 const DEPT_KEYWORDS = {
-  "Roads": [
+  "Roads and Drainage": [
     "pothole", "road", "highway", "street", "pavement", "crater",
     "bump", "broken road", "repair road", "asphalt", "divider",
-    "footpath", "sidewalk", "carriageway"
+    "footpath", "sidewalk", "carriageway", "drainage", "drain",
+    "sewage", "overflow", "waterlogging", "flood", "nala",
+    "blocked drain", "gutter", "manhole", "overflowing"
   ],
-  "Water Supply": [
-    "water", "pipe", "leakage", "leak", "tap", "supply", "shortage",
-    "no water", "water cut", "drinking water", "nal", "pipeline",
-    "contaminated water", "murky water"
-  ],
-  "Electricity": [
+  "Electricity Department": [
     "electricity", "power", "electric", "wire", "transformer",
     "outage", "blackout", "no power", "current", "meter",
     "short circuit", "sparking", "tripping", "voltage"
   ],
-  "Sanitation": [
+  "Water Supply Department": [
+    "water", "pipe", "leakage", "leak", "tap", "supply", "shortage",
+    "no water", "water cut", "drinking water", "nal", "pipeline",
+    "contaminated water", "murky water"
+  ],
+  "Solid Waste Management": [
     "garbage", "waste", "trash", "rubbish", "litter", "dump",
-    "sanitation", "sweeping", "cleanliness", "filth", "smell",
-    "open defecation", "toilet", "sewage smell"
+    "sweeping", "cleanliness", "filth", "smell", "dustbin", "landfill"
   ],
-  "Drainage": [
-    "drainage", "drain", "sewage", "overflow", "waterlogging",
-    "flood", "nala", "blocked drain", "stagnant water", "gutter",
-    "manhole", "overflowing"
+  "Public Health": [
+    "health", "medical", "epidemic", "disease", "dengue", "malaria",
+    "mosquito", "clinic", "hospital", "hygiene", "sanitation", "open defecation"
   ],
-  "Street Lights": [
-    "street light", "streetlight", "lamp post", "dark road",
-    "light not working", "lamppost", "pole light", "night light",
-    "no light", "dim light"
+  "Traffic Police": [
+    "traffic", "signal", "zebra crossing", "parking", "jam",
+    "vehicle", "fine", "congestion", "speeding", "one way"
   ],
-  "Public Transport": [
-    "bus", "train", "metro", "auto", "transport", "route",
-    "driver", "conductor", "stop", "halt", "schedule",
-    "overcrowding", "overloaded"
+  "Pollution Control Board": [
+    "pollution", "smoke", "dust", "air quality", "chemical",
+    "factory emission", "noise", "loud speaker", "sound pollution"
   ],
+  "Parks and Gardens": [
+    "park", "garden", "tree", "grass", "branch", "municipal park", "green belt"
+  ],
+  "Fire Department": [
+    "fire", "smoke", "burn", "explosion", "cylinder blast", "rescue"
+  ],
+  "Municipal Corporation": [
+    "tax", "building permission", "birth certificate", "death certificate",
+    "encroachment", "hawkers", "license", "shop act"
+  ],
+  "Women Safety Cell": [
+    "harassment", "unsafe", "women safety", "eve teasing", "stalking", "abuse"
+  ],
+  "Cyber Crime": [
+    "cyber", "online fraud", "scam", "phishing", "hacked", "password",
+    "hack", "spam", "bank fraud", "credit card fraud"
+  ],
+  "Police": [
+    "theft", "robbery", "fight", "police", "crime", "law and order",
+    "brawl", "kidnap", "assault"
+  ],
+  "Animal Control": [
+    "stray dog", "cattle", "monkey menace", "animal bite", "rabies", "pig", "stray"
+  ]
 };
 
 const PRIORITY_KEYWORDS = {
   "High": [
     "urgent", "emergency", "danger", "dangerous", "immediate",
     "critical", "accident", "injury", "death", "fire", "electrocute",
-    "collapse", "flood", "severe", "major", "fatal"
+    "collapse", "flood", "severe", "major", "fatal", "risk"
   ],
   "Low": [
     "minor", "small", "slight", "little", "cosmetic", "tiny",
@@ -176,14 +189,76 @@ const PRIORITY_KEYWORDS = {
 };
 
 const CATEGORY_MAP = {
-  "Roads": "Road Damage",
-  "Water Supply": "Water Issue",
-  "Electricity": "Power Outage",
-  "Sanitation": "Sanitation & Hygiene",
-  "Drainage": "Drainage & Flooding",
-  "Street Lights": "Street Lighting",
-  "Public Transport": "Transport Issue",
-  "Other": "General Complaint",
+  "Roads and Drainage": "Water Logging and Road Damage",
+  "Electricity Department": "Power Issue",
+  "Water Supply Department": "Water Leakage / Deficit",
+  "Solid Waste Management": "Garbage Accumulation",
+  "Public Health": "Mosquito Breeding / Unhygienic Site",
+  "Traffic Police": "Traffic Congestion",
+  "Pollution Control Board": "Air / Noise Pollution",
+  "Parks and Gardens": "Park Maintenance",
+  "Fire Department": "Fire Hazard",
+  "Municipal Corporation": "Property Tax / Regulation",
+  "Women Safety Cell": "Eve Teasing / Unsafe Spot",
+  "Cyber Crime": "Cyber Scam / Account Hack",
+  "Police": "Public Nuisance / Theft",
+  "Animal Control": "Stray Animal Menace",
+  "Other": "General Grievance"
+};
+
+// Local fallback classifier matching backend rules
+const runLocalClassification = (title, description) => {
+  const text = (title + " " + description).toLowerCase();
+
+  const deptScores = {};
+  Object.keys(DEPT_KEYWORDS).forEach(dept => {
+    deptScores[dept] = 0;
+    DEPT_KEYWORDS[dept].forEach(kw => {
+      if (text.includes(kw)) {
+        deptScores[dept]++;
+      }
+    });
+  });
+
+  let bestDept = "Other";
+  let maxScore = 0;
+  Object.keys(deptScores).forEach(dept => {
+    if (deptScores[dept] > maxScore) {
+      maxScore = deptScores[dept];
+      bestDept = dept;
+    }
+  });
+
+  const category = CATEGORY_MAP[bestDept] || "General Grievance";
+
+  let priority = "Medium";
+  for (const level of Object.keys(PRIORITY_KEYWORDS)) {
+    if (PRIORITY_KEYWORDS[level].some(kw => text.includes(kw))) {
+      priority = level;
+      break;
+    }
+  }
+
+  const severity = priority === "High" ? "Critical" : priority === "Low" ? "Minor" : "Moderate";
+
+  const foundKeywords = [];
+  Object.values(DEPT_KEYWORDS).forEach(list => {
+    list.forEach(kw => {
+      if (text.includes(kw) && !foundKeywords.includes(kw)) {
+        foundKeywords.push(kw);
+      }
+    });
+  });
+
+  return {
+    department: bestDept,
+    category: category,
+    priority: priority,
+    severity: severity,
+    confidence: 0.0,
+    reason: "Ollama offline or API error. Local keyword fallback was applied.",
+    keywords: foundKeywords.slice(0, 5)
+  };
 };
 
 // ─── ID Generator ─────────────────────────────────────────────────────────────
@@ -254,7 +329,7 @@ export const getCitizenComplaints = async (citizenId) => {
  * @param {Object} payload
  *   citizen         : { name, aadhaar, mobile, email, address }
  *   complaintLocation: { area, landmark, pinCode }
- *   complaint       : { title, description, department, priority }
+ *   complaint       : { title, description }
  *   imagePreview    : data-URL string | null
  *
  * @returns {Promise<Object>} The saved flat record
@@ -269,6 +344,20 @@ export const createComplaint = async (payload) => {
   const latitude = payload.latitude || (18.5204 + (Math.random() - 0.5) * 0.08);
   const longitude = payload.longitude || (73.8567 + (Math.random() - 0.5) * 0.08);
 
+  // Run AI classification pipeline
+  let ai_result;
+  try {
+    const res = await axios.post(`${API_URL}/classify`, {
+      title: complaint.title || "",
+      description: complaint.description || "",
+      location: complaintLocation.area || ""
+    });
+    ai_result = res.data;
+  } catch (err) {
+    console.warn("[AI Classifier] Backend offline or error. Using local fallback:", err);
+    ai_result = runLocalClassification(complaint.title || "", complaint.description || "");
+  }
+
   const record = {
     id:             generateId(),
     citizenId:      (citizen.aadhaar || '').replace(/\s+/g, ''),
@@ -281,8 +370,14 @@ export const createComplaint = async (payload) => {
     area:           complaintLocation.area,
     landmark:       complaintLocation.landmark || null,
     pinCode:        complaintLocation.pinCode  || null,
-    department:     complaint.department || 'Pending AI Classification',
-    priority:       complaint.priority   || 'Pending AI Analysis',
+    department:     ai_result.department,
+    category:       ai_result.category,
+    priority:       ai_result.priority,
+    ai_severity:    ai_result.severity,
+    ai_confidence:  ai_result.confidence,
+    ai_reason:      ai_result.reason,
+    ai_keywords:    ai_result.keywords,
+    ai_summary:     ai_result.reason,
     status:         'Submitted',
     imagePreview:   imagePreview || null,
     latitude,
@@ -334,10 +429,10 @@ export const deleteComplaint = async (id) => {
   _writeAll(_readAll().filter((c) => c.id.toLowerCase() !== id.toLowerCase()));
 };
 
-// ─── Simulated AI Helpers (Offline Support) ───────────────────────────────────
+// ─── AI Classifier Operations (Offline/Online Support) ──────────────────────
 
 /**
- * Perform keyword-based AI classification on a complaint description.
+ * Perform AI classification on a complaint description (Re-run classifier).
  * @param {string} id
  * @returns {Promise<Object>} Updated complaint record
  */
@@ -348,46 +443,30 @@ export const classifyComplaintAI = async (id) => {
   if (idx === -1) throw new Error(`Complaint ${id} not found.`);
 
   const c = all[idx];
-  const text = (c.description || '').toLowerCase();
+  let ai_result;
 
-  // Score departments based on keyword counts
-  const deptScores = {};
-  Object.keys(DEPT_KEYWORDS).forEach(dept => {
-    deptScores[dept] = 0;
-    DEPT_KEYWORDS[dept].forEach(kw => {
-      if (text.includes(kw)) {
-        deptScores[dept]++;
-      }
+  try {
+    const res = await axios.post(`${API_URL}/classify`, {
+      title: c.title || "",
+      description: c.description || "",
+      location: c.area || ""
     });
-  });
-
-  let bestDept = "Other";
-  let maxScore = 0;
-  Object.keys(deptScores).forEach(dept => {
-    if (deptScores[dept] > maxScore) {
-      maxScore = deptScores[dept];
-      bestDept = dept;
-    }
-  });
-
-  // Score priorities
-  let priority = "Medium";
-  for (const level of Object.keys(PRIORITY_KEYWORDS)) {
-    if (PRIORITY_KEYWORDS[level].some(kw => text.includes(kw))) {
-      priority = level;
-      break;
-    }
+    ai_result = res.data;
+  } catch (err) {
+    console.warn("[AI Classifier] Backend offline or error. Using local fallback:", err);
+    ai_result = runLocalClassification(c.title || "", c.description || "");
   }
-
-  const category = CATEGORY_MAP[bestDept] || "General Complaint";
-  const summary = `${category} reported at the mentioned location. Priority assessed as ${priority}. Routed to ${bestDept} department for resolution.`;
 
   all[idx] = {
     ...c,
-    department: bestDept,
-    category,
-    priority,
-    ai_summary: summary,
+    department: ai_result.department,
+    category: ai_result.category,
+    priority: ai_result.priority,
+    ai_severity: ai_result.severity,
+    ai_confidence: ai_result.confidence,
+    ai_reason: ai_result.reason,
+    ai_keywords: ai_result.keywords,
+    ai_summary: ai_result.reason,
     updatedAt: new Date().toISOString()
   };
 
@@ -427,7 +506,6 @@ export const auditEvidenceAI = async (id) => {
   return all[idx];
 };
 
-// ─── Legacy compatibility exports ─────────────────────────────────────────────
 export const updateComplaintStatus = async (id, newStatus) => {
   return updateComplaint(id, { status: newStatus });
 };

@@ -8,6 +8,7 @@ class Complaint(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     citizen_name = Column(String(100), nullable=True)
     citizen_phone = Column(String(20), nullable=True)
+    title = Column(String(150), nullable=True)
     description = Column(Text, nullable=False)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
@@ -19,6 +20,10 @@ class Complaint(Base):
     category = Column(String(100), nullable=True)
     priority = Column(String(20), nullable=True, default="Medium")
     ai_summary = Column(Text, nullable=True)
+    ai_confidence = Column(Float, nullable=True)
+    ai_reason = Column(Text, nullable=True)
+    ai_severity = Column(String(20), nullable=True)
+    ai_keywords = Column(Text, nullable=True)
     
     # Evidence Audit Fields (filled by Vision LLM)
     evidence_verdict = Column(String(20), nullable=True)  # MATCH, MISMATCH, UNCERTAIN
@@ -36,6 +41,7 @@ class Complaint(Base):
             "id": self.id,
             "citizen_name": self.citizen_name,
             "citizen_phone": self.citizen_phone,
+            "title": self.title,
             "description": self.description,
             "latitude": self.latitude,
             "longitude": self.longitude,
@@ -45,6 +51,10 @@ class Complaint(Base):
             "category": self.category,
             "priority": self.priority,
             "ai_summary": self.ai_summary,
+            "ai_confidence": self.ai_confidence,
+            "ai_reason": self.ai_reason,
+            "ai_severity": self.ai_severity,
+            "ai_keywords": self.ai_keywords,
             "evidence_verdict": self.evidence_verdict,
             "evidence_reason": self.evidence_reason,
             "evidence_confidence": self.evidence_confidence,

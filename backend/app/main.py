@@ -68,3 +68,18 @@ def health_check(db: Session = Depends(get_db)):
             "ollama_model": os.getenv("OLLAMA_MODEL", "llama3.2")
         }
     }
+
+from app.schemas.complaint import ClassifyRequest, ClassifyResponse
+from app.services import ai_classifier
+
+@app.post("/api/classify", response_model=ClassifyResponse)
+def classify_complaint_endpoint(payload: ClassifyRequest):
+    """
+    Direct endpoint for AI complaint classification using Ollama or rule-based fallback.
+    """
+    result = ai_classifier.classify_complaint(
+        title=payload.title,
+        description=payload.description,
+        location=payload.location
+    )
+    return result

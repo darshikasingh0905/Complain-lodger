@@ -402,27 +402,85 @@ function AdminPanel() {
                   </div>
 
                   {/* Department / Category / Priority block */}
-                  <div className="bg-slate-900/60 p-4 rounded-2xl border border-sky-500/10 space-y-3 mt-4">
-                    <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="bg-slate-900/60 p-4 rounded-2xl border border-sky-500/10 space-y-4 mt-4 text-xs">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div>
-                        <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Department</span>
-                        <span className="text-[11px] font-extrabold text-sky-400">{selectedComplaint.department}</span>
+                        <span className="text-[9px] text-slate-500 font-bold block uppercase mb-1">Department</span>
+                        <span className="text-xs font-black text-sky-400">{selectedComplaint.department || 'Unassigned'}</span>
                       </div>
                       <div>
-                        <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Status</span>
-                        <span className="text-[11px] font-bold text-slate-200">{selectedComplaint.status}</span>
+                        <span className="text-[9px] text-slate-500 font-bold block uppercase mb-1">Category</span>
+                        <span className="text-xs font-semibold text-slate-200">{selectedComplaint.category || 'General'}</span>
                       </div>
                       <div>
-                        <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Priority</span>
-                        <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold rounded uppercase ${
-                          selectedComplaint.priority === 'High'   ? 'bg-rose-500/10 text-rose-400' :
-                          selectedComplaint.priority === 'Medium' ? 'bg-amber-500/10 text-amber-400' :
-                          'bg-emerald-500/10 text-emerald-400'
+                        <span className="text-[9px] text-slate-500 font-bold block uppercase mb-1">Priority</span>
+                        <span className={`inline-flex px-2 py-0.5 text-[10px] font-black rounded-lg uppercase border ${
+                          selectedComplaint.priority === 'High'   ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                          selectedComplaint.priority === 'Medium' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                          'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                         }`}>
-                          {selectedComplaint.priority}
+                          {selectedComplaint.priority || 'Medium'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-500 font-bold block uppercase mb-1">AI Severity</span>
+                        <span className={`inline-flex px-2 py-0.5 text-[10px] font-black rounded-lg uppercase border ${
+                          selectedComplaint.ai_severity === 'Critical' ? 'bg-red-950/40 text-red-400 border-red-500/30' :
+                          selectedComplaint.ai_severity === 'Major'    ? 'bg-orange-950/40 text-orange-400 border-orange-500/30' :
+                          selectedComplaint.ai_severity === 'Moderate' ? 'bg-yellow-950/40 text-yellow-400 border-yellow-500/30' :
+                          'bg-slate-900 text-slate-400 border-slate-700'
+                        }`}>
+                          {selectedComplaint.ai_severity || 'Moderate'}
                         </span>
                       </div>
                     </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-white/5">
+                      <div>
+                        <span className="text-[9px] text-slate-500 font-bold block uppercase mb-1">AI Confidence</span>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 bg-slate-950 h-2 rounded-full overflow-hidden border border-white/5">
+                            <div 
+                              className={`h-full rounded-full transition-all ${
+                                (selectedComplaint.ai_confidence ?? 0) >= 0.8 ? 'bg-emerald-400' :
+                                (selectedComplaint.ai_confidence ?? 0) >= 0.5 ? 'bg-amber-400' :
+                                'bg-rose-400'
+                              }`}
+                              style={{ width: `${Math.round((selectedComplaint.ai_confidence ?? 0) * 100)}%` }}
+                            />
+                          </div>
+                          <span className="font-mono text-[11px] font-black text-slate-350">
+                            {selectedComplaint.ai_confidence != null 
+                              ? `${Math.round(selectedComplaint.ai_confidence * 100)}%` 
+                              : '0%'}
+                          </span>
+                        </div>
+                      </div>
+                      {selectedComplaint.ai_keywords && (
+                        <div>
+                          <span className="text-[9px] text-slate-500 font-bold block uppercase mb-1.5">AI Keywords</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(Array.isArray(selectedComplaint.ai_keywords) 
+                              ? selectedComplaint.ai_keywords 
+                              : (selectedComplaint.ai_keywords || '').split(',').map(s => s.trim()).filter(Boolean)
+                            ).map((kw, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-slate-950 border border-white/5 text-[9px] text-slate-400 rounded-md font-medium">
+                                #{kw}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {selectedComplaint.ai_reason && (
+                      <div className="pt-3 border-t border-white/5">
+                        <span className="text-[9px] text-slate-500 font-bold block uppercase mb-1">AI Routing Reason</span>
+                        <p className="text-[11px] text-slate-400 italic leading-relaxed">
+                          "{selectedComplaint.ai_reason}"
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   {/* Description */}

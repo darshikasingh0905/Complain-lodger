@@ -3,16 +3,17 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from app.models.complaint import Complaint
 from app.schemas.complaint import ComplaintCreate, ComplaintStatusUpdate, ComplaintAIUpdate
-from app.services import ai_service
+from app.services import ai_service, ai_classifier
 
 def create_complaint(db: Session, schema: ComplaintCreate) -> Complaint:
     """
     Inserts a new grievance record, then immediately runs AI classification
-    to populate department, category, priority, and ai_summary.
+    to populate department, category, priority, severity, confidence, reason, and keywords.
     """
     db_obj = Complaint(
         citizen_name=schema.citizen_name,
         citizen_phone=schema.citizen_phone,
+        title=schema.title,
         description=schema.description,
         latitude=schema.latitude,
         longitude=schema.longitude,
@@ -28,18 +29,31 @@ def create_complaint(db: Session, schema: ComplaintCreate) -> Complaint:
 
     # Run AI classification (Ollama or keyword fallback)
     try:
-        ai_result = ai_service.classify_complaint(schema.description)
+        ai_result = ai_classifier.classify_complaint(
+            title=schema.title or "",
+            description=schema.description,
+            location=schema.address
+        )
         db_obj.department = ai_result["department"]
         db_obj.category   = ai_result["category"]
         db_obj.priority   = ai_result["priority"]
-        db_obj.ai_summary = ai_result["ai_summary"]
-        source = ai_result.get("source", "unknown")
-        print(f"[AI] Complaint #{db_obj.id} classified via '{source}': "
-              f"{db_obj.department} / {db_obj.priority}")
+        db_obj.ai_severity = ai_result["severity"]
+        db_obj.ai_confidence = ai_result["confidence"]
+        db_obj.ai_reason = ai_result["reason"]
+        
+        # Convert keywords list to comma-separated string
+        kw_list = ai_result.get("keywords", [])
+        db_obj.ai_keywords = ", ".join(kw_list) if isinstance(kw_list, list) else str(kw_list)
+
+        # Simple single sentence summary for ai_summary
+        db_obj.ai_summary = ai_result.get("reason", "")
+        
+        print(f"[AI Classifier] Complaint #{db_obj.id} classified: "
+              f"{db_obj.department} / {db_obj.priority} / Confidence: {db_obj.ai_confidence}")
         db.commit()
         db.refresh(db_obj)
     except Exception as e:
-        print(f"[AI] Classification failed for complaint #{db_obj.id}: {e}")
+        print(f"[AI Classifier] Classification failed for complaint #{db_obj.id}: {e}")
 
     return db_obj
 

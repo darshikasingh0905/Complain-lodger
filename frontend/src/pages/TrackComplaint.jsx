@@ -250,7 +250,7 @@ function TrackComplaint() {
                 </div>
 
                 {/* Meta grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div className="space-y-1 bg-slate-900/40 p-3.5 rounded-xl border border-white/5">
                     <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wide block">Citizen</span>
                     <p className="text-slate-200 font-bold flex items-center gap-1.5">
@@ -266,12 +266,6 @@ function TrackComplaint() {
                   </div>
 
                   <div className="space-y-1 bg-slate-900/40 p-3.5 rounded-xl border border-white/5">
-                    <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wide block">Department</span>
-                    <p className="text-slate-200 font-bold text-sky-400">{current.department}</p>
-                    <p className="text-slate-500 text-[10px]">Priority: {current.priority}</p>
-                  </div>
-
-                  <div className="space-y-1 bg-slate-900/40 p-3.5 rounded-xl border border-white/5">
                     <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wide block">Filed On</span>
                     <p className="text-slate-200 font-bold flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-slate-500" />
@@ -281,6 +275,84 @@ function TrackComplaint() {
                       Updated: {new Date(current.updatedAt).toLocaleTimeString()}
                     </p>
                   </div>
+                </div>
+
+                {/* AI Classification Summary */}
+                <div className="bg-slate-900/60 p-4 rounded-xl border border-sky-500/10 space-y-3.5 text-xs">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Assigned Department</span>
+                      <span className="text-[11px] font-black text-sky-400">{current.department || 'Other'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Category</span>
+                      <span className="text-[11px] font-bold text-slate-200">{current.category || 'General'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Assessed Priority</span>
+                      <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold rounded uppercase ${
+                        current.priority === 'High'   ? 'bg-rose-500/10 text-rose-400' :
+                        current.priority === 'Medium' ? 'bg-amber-500/10 text-amber-400' :
+                        'bg-emerald-500/10 text-emerald-400'
+                      }`}>
+                        {current.priority || 'Medium'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">AI Severity</span>
+                      <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold rounded uppercase ${
+                        current.ai_severity === 'Critical' ? 'bg-rose-950/40 text-rose-400 border border-rose-500/10' :
+                        current.ai_severity === 'Major'    ? 'bg-orange-950/40 text-orange-400 border border-orange-500/10' :
+                        'bg-slate-900 text-slate-400'
+                      }`}>
+                        {current.ai_severity || 'Moderate'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-2.5 border-t border-white/5 space-y-2">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-slate-500 font-bold uppercase">AI Routing Confidence</span>
+                      <span className="font-mono text-slate-350 font-black">
+                        {current.ai_confidence != null 
+                          ? `${Math.round(current.ai_confidence * 100)}%` 
+                          : '0%'}
+                      </span>
+                    </div>
+                    <div className="h-1.5 bg-slate-950 rounded-full overflow-hidden border border-white/5">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-700 ${
+                          (current.ai_confidence ?? 0) >= 0.8 ? 'bg-emerald-400' :
+                          (current.ai_confidence ?? 0) >= 0.5 ? 'bg-amber-400' :
+                          'bg-rose-400'
+                        }`}
+                        style={{ width: `${Math.round((current.ai_confidence ?? 0) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {current.ai_keywords && (
+                    <div className="pt-2 border-t border-white/5">
+                      <div className="flex flex-wrap gap-1">
+                        {(Array.isArray(current.ai_keywords) 
+                          ? current.ai_keywords 
+                          : (current.ai_keywords || '').split(',').map(s => s.trim()).filter(Boolean)
+                        ).map((kw, i) => (
+                          <span key={i} className="px-2 py-0.5 bg-slate-950 text-[9px] text-slate-400 rounded-md font-medium border border-white/5">
+                            #{kw}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {current.ai_reason && (
+                    <div className="pt-2 border-t border-white/5">
+                      <p className="text-[10px] text-slate-500 italic">
+                        Classification audit log: "{current.ai_reason}"
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Area */}
