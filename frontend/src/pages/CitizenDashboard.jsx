@@ -1,11 +1,32 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, LogOut, PlusCircle, Search, ShieldAlert, BadgeInfo } from 'lucide-react';
+import { User, LogOut, PlusCircle, Search, ShieldAlert, BadgeInfo, BarChart2, ChevronRight } from 'lucide-react';
 import useAuth from '../hooks/useAuth';
+import { useComplaints } from '../context/ComplaintContext';
 
 export const CitizenDashboard = () => {
   const { userData, logout } = useAuth();
   const navigate = useNavigate();
+  const { complaints } = useComplaints();
+
+  const myCitizenId = userData?.aadhaar || '';
+  const recentComplaints = complaints
+    .filter(c => c.citizenId === myCitizenId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 3);
+
+  const priorityStyle = (level) => ({
+    Critical: 'bg-red-500/10 text-red-400 border-red-500/20',
+    High:     'bg-orange-500/10 text-orange-400 border-orange-500/20',
+    Medium:   'bg-blue-500/10 text-blue-400 border-blue-500/20',
+    Low:      'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  }[level] || 'bg-slate-800 text-slate-400 border-slate-700');
+
+  const statusStyle = (status) => ({
+    Resolved:    'text-emerald-400',
+    'In Progress':'text-amber-400',
+    Assigned:     'text-sky-400',
+  }[status] || 'text-slate-400');
 
   const handleLogout = async () => {
     await logout();
@@ -115,6 +136,52 @@ export const CitizenDashboard = () => {
           </button>
         </div>
       </div>
+
+      {/* Recent Grievances Priority Strip */}
+      {recentComplaints.length > 0 && (
+        <div className="glass-panel p-6 rounded-3xl border border-white/5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BarChart2 className="w-4 h-4 text-sky-400" />
+              <h3 className="text-xs font-extrabold uppercase tracking-widest text-slate-400">Recent Grievances</h3>
+            </div>
+            <button
+              onClick={() => navigate('/track')}
+              className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-sky-400 hover:text-sky-300 transition-colors cursor-pointer"
+            >
+              View All <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {recentComplaints.map((c) => {
+              const level = c.priorityLevel || c.priority || 'Medium';
+              const score = c.priorityScore ?? null;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => navigate('/track')}
+                  className="w-full flex items-center justify-between gap-4 bg-slate-900/40 hover:bg-slate-900/70 border border-white/5 hover:border-slate-800 p-3.5 rounded-xl transition-all cursor-pointer group text-left"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex flex-col">
+                      <span className="font-mono text-[10px] text-sky-400 font-bold">{c.id}</span>
+                      <span className="text-xs text-slate-300 font-semibold truncate max-w-[200px]">{c.title || c.description?.slice(0,50)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${priorityStyle(level)}`}>
+                      {level}{score !== null ? ` · ${score}` : ''}
+                    </span>
+                    <span className={`text-[9px] font-bold uppercase ${statusStyle(c.status)}`}>{c.status}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 transition-colors" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

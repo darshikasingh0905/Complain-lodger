@@ -3,7 +3,73 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from app.models.complaint import Complaint
 from app.schemas.complaint import ComplaintCreate, ComplaintStatusUpdate, ComplaintAIUpdate
-from app.services import ai_service, ai_classifier
+from app.services import ai_service, ai_classifier, priority_engine
+
+def recalculate_complaint_priority(db: Session, complaint_id: int, ai_result: dict = None) -> Optional[Complaint]:
+    """Helper to recalculate priority parameters using the rule-based engine."""
+    db_obj = db.query(Complaint).filter(Complaint.id == complaint_id).first()
+    if not db_obj:
+        return None
+        
+    if ai_result:
+        ai_metadata = {
+            "safetyRisk": ai_result.get("safetyRisk", "Medium"),
+            "publicImpact": ai_result.get("publicImpact", "Medium"),
+            "essentialService": ai_result.get("essentialService", False),
+            "urgency": ai_result.get("urgency", "Medium")
+        }
+    else:
+        is_essential = db_obj.department in ["Electricity Department", "Water Supply Department", "Public Health", "Fire Department"]
+        ai_metadata = {
+            "safetyRisk": db_obj.ai_severity or "Medium",
+            "publicImpact": "Medium",
+            "essentialService": is_essential,
+            "urgency": db_obj.priority or "Medium"
+        }
+        
+    res = priority_engine.calculate_priority(
+        db=db,
+        complaint_id=db_obj.id,
+        description=db_obj.description or "",
+        address=db_obj.address or "",
+        category=db_obj.category or "",
+        created_at=db_obj.created_at,
+        status=db_obj.status or "Submitted",
+        ai_metadata=ai_metadata
+    )
+    
+    db_obj.priorityScore = res["priorityScore"]
+    db_obj.priorityLevel = res["priorityLevel"]
+    db_obj.priorityBreakdown = res["priorityBreakdown"]
+    db_obj.priority = res["priorityLevel"]  # sync legacy priority
+    db_obj.ai_reason = res["reason"]  # set human-readable explanation
+    
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+
+def update_all_related_priorities(db: Session, category: str, address: str):
+    """Update priorities for all complaints in the same category/address to recalculate duplicate count."""
+    if not category or not address:
+        return
+    try:
+        complaints = db.query(Complaint).filter(
+            Complaint.category == category,
+            Complaint.address == address
+        ).all()
+        for c in complaints:
+            recalculate_complaint_priority(db, c.id)
+    except Exception as e:
+        print(f"[Complaint Service] Error updating related priorities: {e}")
+
+def refresh_pending_times(db: Session):
+    """Refresh priorities for all active/pending complaints to reflect elapsed time pending."""
+    try:
+        unresolved = db.query(Complaint).filter(Complaint.status != "Resolved").all()
+        for c in unresolved:
+            recalculate_complaint_priority(db, c.id)
+    except Exception as e:
+        print(f"[Complaint Service] Error refreshing pending times: {e}")
 
 def create_complaint(db: Session, schema: ComplaintCreate) -> Complaint:
     """
@@ -48,9 +114,16 @@ def create_complaint(db: Session, schema: ComplaintCreate) -> Complaint:
         # Simple single sentence summary for ai_summary
         db_obj.ai_summary = ai_result.get("reason", "")
         
-        print(f"[AI Classifier] Complaint #{db_obj.id} classified: "
-              f"{db_obj.department} / {db_obj.priority} / Confidence: {db_obj.ai_confidence}")
+        print(f"[AI Classifier] Complaint #{db_obj.id} classified. Recalculating priority score...")
         db.commit()
+        db.refresh(db_obj)
+        
+        # Run priority engine calculation
+        recalculate_complaint_priority(db, db_obj.id, ai_result)
+        
+        # Recalculate other related complaints' duplicate score
+        update_all_related_priorities(db, db_obj.category, db_obj.address)
+        
         db.refresh(db_obj)
     except Exception as e:
         print(f"[AI Classifier] Classification failed for complaint #{db_obj.id}: {e}")
@@ -59,6 +132,7 @@ def create_complaint(db: Session, schema: ComplaintCreate) -> Complaint:
 
 def get_complaints(db: Session, department: Optional[str] = None, status: Optional[str] = None) -> List[Complaint]:
     """Retrieves list of all complaints with filters on department or status."""
+    refresh_pending_times(db)
     query = db.query(Complaint)
     if department:
         query = query.filter(Complaint.department == department)
@@ -68,6 +142,7 @@ def get_complaints(db: Session, department: Optional[str] = None, status: Option
 
 def get_complaint_by_id(db: Session, complaint_id: int) -> Optional[Complaint]:
     """Queries database for grievance by integer ID."""
+    refresh_pending_times(db)
     return db.query(Complaint).filter(Complaint.id == complaint_id).first()
 
 def track_complaints(db: Session, search_query: str) -> List[Complaint]:
@@ -76,6 +151,7 @@ def track_complaints(db: Session, search_query: str) -> List[Complaint]:
     1. Integer ID matching search_query
     2. Phone number matching search_query
     """
+    refresh_pending_times(db)
     query_filters = []
     
     # Try parsing search_query as ID integer
@@ -92,17 +168,23 @@ def track_complaints(db: Session, search_query: str) -> List[Complaint]:
 
 def update_complaint_status(db: Session, complaint_id: int, status: str) -> Optional[Complaint]:
     """Updates the status of an existing grievance report."""
-    db_obj = get_complaint_by_id(db, complaint_id)
+    db_obj = db.query(Complaint).filter(Complaint.id == complaint_id).first()
     if not db_obj:
         return None
     db_obj.status = status
     db.commit()
     db.refresh(db_obj)
+    
+    # Trigger priority update since status changed (e.g. resolved or reopened)
+    recalculate_complaint_priority(db, complaint_id)
+    # Recalculate duplicate counts for others
+    update_all_related_priorities(db, db_obj.category, db_obj.address)
+    
     return db_obj
 
 def update_complaint_ai(db: Session, complaint_id: int, ai_data: ComplaintAIUpdate) -> Optional[Complaint]:
     """Updates classification outputs extracted by Ollama model."""
-    db_obj = get_complaint_by_id(db, complaint_id)
+    db_obj = db.query(Complaint).filter(Complaint.id == complaint_id).first()
     if not db_obj:
         return None
         
@@ -117,6 +199,10 @@ def update_complaint_ai(db: Session, complaint_id: int, ai_data: ComplaintAIUpda
         
     db.commit()
     db.refresh(db_obj)
+    
+    # Recalculate priority
+    recalculate_complaint_priority(db, complaint_id)
+    
     return db_obj
 
 def update_evidence_audit(
@@ -127,7 +213,7 @@ def update_evidence_audit(
     confidence: float
 ) -> Optional[Complaint]:
     """Saves vision AI evidence audit results to the complaint record."""
-    db_obj = get_complaint_by_id(db, complaint_id)
+    db_obj = db.query(Complaint).filter(Complaint.id == complaint_id).first()
     if not db_obj:
         return None
     db_obj.evidence_verdict = verdict
@@ -135,6 +221,10 @@ def update_evidence_audit(
     db_obj.evidence_confidence = confidence
     db.commit()
     db.refresh(db_obj)
+    
+    # Recalculate priority (new evidence added/analyzed)
+    recalculate_complaint_priority(db, complaint_id)
+    
     return db_obj
 
 def get_analytics_data(db: Session):
@@ -142,6 +232,7 @@ def get_analytics_data(db: Session):
     Computes chronological trends, department counts, priority ratios,
     and emerging high-risk hotspot surges by comparing complaint velocities.
     """
+    refresh_pending_times(db)
     from sqlalchemy import func, and_
     from datetime import datetime, timedelta
     

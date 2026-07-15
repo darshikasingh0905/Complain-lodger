@@ -166,47 +166,59 @@ def _fallback_classify(title: str, description: str) -> Dict[str, Any]:
             if kw in text and kw not in found_keywords:
                 found_keywords.append(kw)
 
+    is_essential = best_dept in ["Electricity Department", "Water Supply Department", "Public Health", "Fire Department"]
+    fallback_reason = "Ollama offline or returned invalid response. Fallback rule-based matching was used."
     return {
         "department": best_dept,
         "category": category,
         "priority": priority,
         "severity": severity,
         "confidence": 0.0,
-        "reason": "Ollama offline or returned invalid response. Fallback rule-based matching was used.",
-        "keywords": found_keywords[:5]
+        "reason": fallback_reason,
+        "keywords": found_keywords[:5],
+        "safetyRisk": priority,  # Fallback maps safetyRisk to priority level
+        "publicImpact": priority,  # Fallback maps publicImpact to priority level
+        "essentialService": is_essential,
+        "urgency": priority,  # Fallback maps urgency to priority level
+        "summary": description[:100] + "..." if len(description) > 100 else description,
+        "reasoning": fallback_reason
     }
 
 
 # ─── System Prompt ──────────────────────────────────────────────────────────
 _SYSTEM_PROMPT = """You are an expert municipal complaint classifier.
-Given a complaint title, description, and optional location, identify:
-1. The correct government department from this list ONLY:
+Given a complaint title, description, and optional location, analyze the complaint and extract structured information.
+Identify:
+1. department: The correct government department from this list ONLY:
    [Roads and Drainage, Electricity Department, Water Supply Department, Solid Waste Management, Public Health, Traffic Police, Pollution Control Board, Parks and Gardens, Fire Department, Municipal Corporation, Women Safety Cell, Cyber Crime, Police, Animal Control, Other]
-2. A specific complaint category (e.g. "Pothole", "Water Leakage", "Illegal Parking", "Garbage Pile", "Stray Dog Bite").
-3. Priority level: one of [Low, Medium, High]
-4. Severity level: one of [Minor, Moderate, Major, Critical]
-5. Confidence score: a float between 0.00 and 1.00 indicating classification certainty
-6. Reason: a single sentence explaining why this classification was made
-7. Keywords: a list of up to 5 relevant technical/topic words from the complaint text
+2. category: A specific complaint category (e.g. "Pothole", "Water Leakage", "Illegal Parking", "Garbage Pile", "Stray Dog Bite").
+3. summary: A single concise sentence summarizing the complaint.
+4. severity: one of [Low, Medium, High, Critical]
+5. urgency: one of [Low, Medium, High]
+6. safetyRisk: one of [Low, Medium, High]
+7. publicImpact: one of [Low, Medium, High]
+8. essentialService: true (boolean) if it disrupts vital public resources like electricity, main drinking water pipeline, critical fire hazards, public hospitals; false otherwise.
+9. reasoning: a single sentence explaining why this classification was made.
 
 Return ONLY a valid JSON object. No explanation, no markdown blocks.
 
 Output JSON format template:
 {
-  "department": "Roads and Drainage",
   "category": "Water Logging",
-  "priority": "High",
-  "severity": "Critical",
-  "confidence": 0.97,
-  "reason": "Complaint describes severe flooding causing dangerous traffic conditions.",
-  "keywords": ["flooding", "traffic", "roads", "drainage"]
+  "department": "Roads and Drainage",
+  "summary": "Heavy water accumulation near bus stand wasting fresh water.",
+  "severity": "High",
+  "urgency": "High",
+  "safetyRisk": "High",
+  "publicImpact": "High",
+  "essentialService": true,
+  "reasoning": "Complaint describes severe flooding near public transport hotspot."
 }"""
 
 
 def classify_complaint(title: str, description: str, location: str = None) -> Dict[str, Any]:
     """
     Classify municipal grievance using local Ollama model, or fallback to rule-based indexing.
-    Always returns: department, category, priority, severity, confidence, reason, keywords
     """
     if not title.strip() and not description.strip():
         return {
@@ -216,7 +228,13 @@ def classify_complaint(title: str, description: str, location: str = None) -> Di
             "severity": "Moderate",
             "confidence": 0.0,
             "reason": "Empty complaint inputs.",
-            "keywords": []
+            "keywords": [],
+            "safetyRisk": "Medium",
+            "publicImpact": "Medium",
+            "essentialService": False,
+            "urgency": "Medium",
+            "summary": "Empty complaint.",
+            "reasoning": "No description provided."
         }
 
     prompt = f"Title: {title}\nDescription: {description}\nLocation: {location or 'Not provided'}"
@@ -227,7 +245,7 @@ def classify_complaint(title: str, description: str, location: str = None) -> Di
         "system": _SYSTEM_PROMPT,
         "stream": False,
         "format": "json",
-        "options": {"temperature": 0.1, "num_predict": 250},
+        "options": {"temperature": 0.1, "num_predict": 300},
     }
 
     try:
@@ -251,32 +269,29 @@ def classify_complaint(title: str, description: str, location: str = None) -> Di
         if dept not in DEPARTMENTS:
             dept = "Other"
 
-        # Validate priority
-        priority = parsed.get("priority", "Medium")
-        if priority not in PRIORITIES:
-            priority = "Medium"
+        # Validate safetyRisk, publicImpact, urgency
+        safety_risk = parsed.get("safetyRisk", "Medium")
+        public_impact = parsed.get("publicImpact", "Medium")
+        urgency = parsed.get("urgency", "Medium")
+        severity = parsed.get("severity", "Medium")
 
-        # Validate severity
-        severity = parsed.get("severity", "Moderate")
-        if severity not in SEVERITIES:
-            severity = "Moderate"
-
-        # Validate confidence
-        confidence = parsed.get("confidence", 0.5)
-        try:
-            confidence = float(confidence)
-            confidence = max(0.0, min(1.0, confidence))
-        except (TypeError, ValueError):
-            confidence = 0.5
+        # Derive a base priority for legacy compatibility
+        priority = urgency if urgency in ["Low", "Medium", "High"] else "Medium"
 
         return {
             "department": dept,
             "category": parsed.get("category", "General"),
             "priority": priority,
             "severity": severity,
-            "confidence": confidence,
-            "reason": parsed.get("reason", "No reason provided by model."),
-            "keywords": parsed.get("keywords", [])[:5]
+            "confidence": 0.9,
+            "reason": parsed.get("reasoning", parsed.get("reason", "Classified by AI model.")),
+            "keywords": parsed.get("keywords", [])[:5],
+            "safetyRisk": safety_risk,
+            "publicImpact": public_impact,
+            "essentialService": bool(parsed.get("essentialService", False)),
+            "urgency": urgency,
+            "summary": parsed.get("summary", ""),
+            "reasoning": parsed.get("reasoning", "")
         }
 
     except Exception as e:

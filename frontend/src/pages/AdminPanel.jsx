@@ -25,7 +25,9 @@ import {
   ShieldCheck,
   ShieldAlert,
   ShieldQuestion,
-  Loader2
+  Loader2,
+  BarChart2,
+  Zap
 } from 'lucide-react';
 
 const STATUS_OPTIONS = ['Submitted', 'Assigned', 'In Progress', 'Resolved'];
@@ -48,6 +50,8 @@ function AdminPanel() {
   const [statusFilter, setStatusFilter]   = useState('All');
   const [deptFilter,   setDeptFilter]     = useState('All');
   const [regionSearch, setRegionSearch]   = useState('');
+  const [priorityFilter, setPriorityFilter] = useState('All');
+  const [sortBy, setSortBy]               = useState('Newest');
 
   // Action states
   const [updatingStatus,  setUpdatingStatus]  = useState(false);
@@ -134,14 +138,24 @@ function AdminPanel() {
   const filteredComplaints = complaints.filter((comp) => {
     const statusMatch = statusFilter === 'All' || comp.status === statusFilter;
     const deptMatch   = deptFilter   === 'All' || comp.department === deptFilter;
+    const priorityMatch = priorityFilter === 'All' || comp.priorityLevel === priorityFilter || comp.priority === priorityFilter;
     const q           = regionSearch.toLowerCase();
     const regionMatch =
       !q ||
       (comp.area         && comp.area.toLowerCase().includes(q)) ||
-      (comp.id           && comp.id.toLowerCase().includes(q)) ||
+      (comp.id           && String(comp.id).toLowerCase().includes(q)) ||
       (comp.citizenName  && comp.citizenName.toLowerCase().includes(q)) ||
       (comp.title        && comp.title.toLowerCase().includes(q));
-    return statusMatch && deptMatch && regionMatch;
+    return statusMatch && deptMatch && priorityMatch && regionMatch;
+  });
+
+  const sortedComplaints = [...filteredComplaints].sort((a, b) => {
+    if (sortBy === 'PriorityScore') {
+      return (b.priorityScore || 0) - (a.priorityScore || 0);
+    }
+    const dateA = new Date(a.createdAt || a.submitted_at || 0).getTime();
+    const dateB = new Date(b.createdAt || b.submitted_at || 0).getTime();
+    return dateB - dateA;
   });
 
   const backendUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace('/api', '');
@@ -198,7 +212,7 @@ function AdminPanel() {
 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 text-left">
           
-          <div className="md:col-span-5 relative">
+          <div className="md:col-span-4 relative">
             <label className="block text-[9px] font-extrabold uppercase tracking-widest text-slate-500 mb-1.5">
               Search Region, Landmark, Name, or ID
             </label>
@@ -214,9 +228,9 @@ function AdminPanel() {
             </div>
           </div>
 
-          <div className="md:col-span-3">
+          <div className="md:col-span-2">
             <label className="block text-[9px] font-extrabold uppercase tracking-widest text-slate-500 mb-1.5">
-              Classification Department
+              Department
             </label>
             <div className="relative">
               <FolderDot className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 text-slate-500" />
@@ -225,7 +239,7 @@ function AdminPanel() {
                 onChange={(e) => setDeptFilter(e.target.value)}
                 className="w-full bg-slate-900/60 border border-slate-800 focus:border-sky-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-205 focus:outline-none transition-colors appearance-none cursor-pointer"
               >
-                <option value="All">All Departments</option>
+                <option value="All">All</option>
                 {DEPARTMENTS.map(dept => (
                   <option key={dept} value={dept}>{dept}</option>
                 ))}
@@ -233,9 +247,9 @@ function AdminPanel() {
             </div>
           </div>
 
-          <div className="md:col-span-4">
+          <div className="md:col-span-2">
             <label className="block text-[9px] font-extrabold uppercase tracking-widest text-slate-500 mb-1.5">
-              Lifecycle Progress state
+              Status State
             </label>
             <div className="relative">
               <SlidersHorizontal className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 text-slate-500" />
@@ -251,6 +265,43 @@ function AdminPanel() {
               </select>
             </div>
           </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-[9px] font-extrabold uppercase tracking-widest text-slate-500 mb-1.5">
+              Priority Filter
+            </label>
+            <div className="relative">
+              <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 text-slate-500" />
+              <select
+                value={priorityFilter}
+                onChange={(e) => setPriorityFilter(e.target.value)}
+                className="w-full bg-slate-900/60 border border-slate-800 focus:border-sky-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-205 focus:outline-none transition-colors appearance-none cursor-pointer"
+              >
+                <option value="All">All Priorities</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-[9px] font-extrabold uppercase tracking-widest text-slate-500 mb-1.5">
+              Sort Order
+            </label>
+            <div className="relative">
+              <Activity className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 text-slate-500" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="w-full bg-slate-900/60 border border-slate-800 focus:border-sky-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-205 focus:outline-none transition-colors appearance-none cursor-pointer"
+              >
+                <option value="Newest">Newest First</option>
+                <option value="PriorityScore">Highest Priority</option>
+              </select>
+            </div>
+          </div>
           
         </div>
       </div>
@@ -261,7 +312,7 @@ function AdminPanel() {
           <Clock className="w-8 h-8 text-sky-400 animate-spin mx-auto mb-3" />
           <p className="text-slate-400 text-sm">Loading complaints…</p>
         </div>
-      ) : filteredComplaints.length === 0 ? (
+      ) : sortedComplaints.length === 0 ? (
         <div className="glass-panel p-16 rounded-3xl text-center border border-white/5 max-w-md mx-auto space-y-4">
           <div className="w-12 h-12 bg-slate-900 border border-white/5 rounded-full flex items-center justify-center mx-auto text-slate-500">
             <FileQuestion className="w-5 h-5" />
@@ -279,11 +330,11 @@ function AdminPanel() {
           {/* Master Panel list: Left */}
           <div className="w-full lg:w-96 shrink-0 space-y-3">
             <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 text-left px-1">
-              Active List ({filteredComplaints.length})
+              Active List ({sortedComplaints.length})
             </h3>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5 max-h-[600px] overflow-y-auto pr-1 text-left">
-              {filteredComplaints.map((c) => {
+              {sortedComplaints.map((c) => {
                 const isSelected = selectedComplaint && selectedComplaint.id === c.id;
                 return (
                   <button
@@ -302,12 +353,13 @@ function AdminPanel() {
                       <span className="font-mono font-bold text-sky-400 text-xs">{c.id}</span>
                       
                       <div className="flex items-center gap-1.5">
-                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded ${
-                          c.priority === 'High' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/15' :
-                          c.priority === 'Medium' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/15' :
-                          'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15'
+                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${
+                          c.priorityLevel === 'Critical' || c.priority === 'Critical' ? 'bg-red-500/10 text-red-400 border-red-500/15' :
+                          c.priorityLevel === 'High' || c.priority === 'High' ? 'bg-orange-500/10 text-orange-400 border-orange-500/15' :
+                          c.priorityLevel === 'Medium' || c.priority === 'Medium' ? 'bg-blue-500/10 text-blue-400 border-blue-500/15' :
+                          'bg-emerald-500/10 text-emerald-400 border-emerald-500/15'
                         }`}>
-                          {c.priority}
+                          {c.priorityLevel || c.priority || 'Medium'} ({c.priorityScore || 0})
                         </span>
                         <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded ${
                           c.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15' :
@@ -413,16 +465,6 @@ function AdminPanel() {
                         <span className="text-xs font-semibold text-slate-200">{selectedComplaint.category || 'General'}</span>
                       </div>
                       <div>
-                        <span className="text-[9px] text-slate-500 font-bold block uppercase mb-1">Priority</span>
-                        <span className={`inline-flex px-2 py-0.5 text-[10px] font-black rounded-lg uppercase border ${
-                          selectedComplaint.priority === 'High'   ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
-                          selectedComplaint.priority === 'Medium' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
-                          'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                        }`}>
-                          {selectedComplaint.priority || 'Medium'}
-                        </span>
-                      </div>
-                      <div>
                         <span className="text-[9px] text-slate-500 font-bold block uppercase mb-1">AI Severity</span>
                         <span className={`inline-flex px-2 py-0.5 text-[10px] font-black rounded-lg uppercase border ${
                           selectedComplaint.ai_severity === 'Critical' ? 'bg-red-950/40 text-red-400 border-red-500/30' :
@@ -433,13 +475,10 @@ function AdminPanel() {
                           {selectedComplaint.ai_severity || 'Moderate'}
                         </span>
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-white/5">
                       <div>
                         <span className="text-[9px] text-slate-500 font-bold block uppercase mb-1">AI Confidence</span>
                         <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-slate-950 h-2 rounded-full overflow-hidden border border-white/5">
+                          <div className="flex-1 bg-slate-950 h-1.5 rounded-full overflow-hidden border border-white/5">
                             <div 
                               className={`h-full rounded-full transition-all ${
                                 (selectedComplaint.ai_confidence ?? 0) >= 0.8 ? 'bg-emerald-400' :
@@ -449,29 +488,30 @@ function AdminPanel() {
                               style={{ width: `${Math.round((selectedComplaint.ai_confidence ?? 0) * 100)}%` }}
                             />
                           </div>
-                          <span className="font-mono text-[11px] font-black text-slate-350">
+                          <span className="font-mono text-[10px] font-black text-slate-400">
                             {selectedComplaint.ai_confidence != null 
                               ? `${Math.round(selectedComplaint.ai_confidence * 100)}%` 
                               : '0%'}
                           </span>
                         </div>
                       </div>
-                      {selectedComplaint.ai_keywords && (
-                        <div>
-                          <span className="text-[9px] text-slate-500 font-bold block uppercase mb-1.5">AI Keywords</span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {(Array.isArray(selectedComplaint.ai_keywords) 
-                              ? selectedComplaint.ai_keywords 
-                              : (selectedComplaint.ai_keywords || '').split(',').map(s => s.trim()).filter(Boolean)
-                            ).map((kw, i) => (
-                              <span key={i} className="px-2 py-0.5 bg-slate-950 border border-white/5 text-[9px] text-slate-400 rounded-md font-medium">
-                                #{kw}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </div>
+
+                    {selectedComplaint.ai_keywords && (
+                      <div className="pt-3 border-t border-white/5">
+                        <span className="text-[9px] text-slate-500 font-bold block uppercase mb-1.5">AI Keywords</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(Array.isArray(selectedComplaint.ai_keywords) 
+                            ? selectedComplaint.ai_keywords 
+                            : (selectedComplaint.ai_keywords || '').split(',').map(s => s.trim()).filter(Boolean)
+                          ).map((kw, i) => (
+                            <span key={i} className="px-2 py-0.5 bg-slate-950 border border-white/5 text-[9px] text-slate-400 rounded-md font-medium">
+                              #{kw}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {selectedComplaint.ai_reason && (
                       <div className="pt-3 border-t border-white/5">
@@ -482,6 +522,87 @@ function AdminPanel() {
                       </div>
                     )}
                   </div>
+
+                  {/* ── Priority Intelligence Panel ─────────────────────── */}
+                  {(() => {
+                    const score  = selectedComplaint.priorityScore  ?? 0;
+                    const level  = selectedComplaint.priorityLevel  || selectedComplaint.priority || 'Medium';
+                    const bd     = selectedComplaint.priorityBreakdown || {};
+                    const reason = selectedComplaint.priorityReason  || selectedComplaint.ai_reason || null;
+
+                    const levelColor = {
+                      Critical: { bar: 'bg-red-500',    badge: 'bg-red-500/10 text-red-400 border-red-500/25',    gauge: 'from-red-600 to-red-400'    },
+                      High:     { bar: 'bg-orange-500', badge: 'bg-orange-500/10 text-orange-400 border-orange-500/25', gauge: 'from-orange-600 to-orange-400' },
+                      Medium:   { bar: 'bg-blue-500',   badge: 'bg-blue-500/10 text-blue-400 border-blue-500/25',  gauge: 'from-blue-600 to-blue-400'   },
+                      Low:      { bar: 'bg-emerald-500',badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25', gauge: 'from-emerald-600 to-emerald-400' },
+                    }[level] || { bar: 'bg-slate-500', badge: 'bg-slate-800 text-slate-400 border-slate-700', gauge: 'from-slate-600 to-slate-400' };
+
+                    const factors = [
+                      { label: 'Safety Risk',       val: bd.safetyRisk    ?? 0, max: 30 },
+                      { label: 'Public Impact',     val: bd.publicImpact  ?? 0, max: 20 },
+                      { label: 'Essential Service', val: bd.essentialService ?? 0, max: 20 },
+                      { label: 'Urgency',           val: bd.urgency       ?? 0, max: 10 },
+                      { label: 'Duplicates',        val: bd.duplicates    ?? 0, max: 10 },
+                      { label: 'Location',          val: bd.location      ?? 0, max: 5  },
+                      { label: 'Time Pending',      val: bd.timePending   ?? 0, max: 5  },
+                    ];
+
+                    return (
+                      <div className="bg-gradient-to-br from-slate-900/80 to-slate-950/80 border border-white/5 rounded-2xl p-4 mt-4 space-y-4">
+                        {/* Header row */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <BarChart2 className="w-4 h-4 text-sky-400" />
+                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Priority Intelligence</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-lg border ${levelColor.badge}`}>{level}</span>
+                            <span className="font-mono font-black text-white text-sm">{score}<span className="text-slate-600 text-[10px] font-semibold">/100</span></span>
+                          </div>
+                        </div>
+
+                        {/* Score gauge bar */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[9px] text-slate-600 font-semibold">
+                            <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
+                          </div>
+                          <div className="h-3 bg-slate-950 rounded-full overflow-hidden border border-white/5 relative">
+                            <div
+                              className={`h-full rounded-full bg-gradient-to-r ${levelColor.gauge} transition-all duration-700`}
+                              style={{ width: `${Math.min(score, 100)}%` }}
+                            />
+                            {[25,50,75].map(p => (
+                              <div key={p} className="absolute top-0 bottom-0 w-px bg-slate-800" style={{ left: `${p}%` }} />
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Breakdown factors */}
+                        <div className="space-y-2 pt-1">
+                          {factors.map((f) => (
+                            <div key={f.label} className="flex items-center gap-3">
+                              <span className="text-[9px] text-slate-500 font-semibold w-32 shrink-0 truncate">{f.label}</span>
+                              <div className="flex-1 h-1.5 bg-slate-950 rounded-full overflow-hidden border border-white/5">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${levelColor.bar}`}
+                                  style={{ width: f.max > 0 ? `${Math.min((f.val / f.max) * 100, 100)}%` : '0%' }}
+                                />
+                              </div>
+                              <span className="font-mono text-[9px] text-slate-400 w-10 text-right shrink-0">{f.val}/{f.max}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Reason */}
+                        {reason && (
+                          <div className="pt-3 border-t border-white/5 flex items-start gap-2">
+                            <Zap className="w-3 h-3 text-yellow-400 shrink-0 mt-0.5" />
+                            <p className="text-[10px] text-slate-400 leading-relaxed italic">{reason}</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Description */}
                   <div className="space-y-2 text-xs mt-4">

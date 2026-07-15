@@ -40,6 +40,9 @@ class ComplaintResponse(ComplaintBase):
     ai_reason: Optional[str] = None
     ai_severity: Optional[str] = None
     ai_keywords: Optional[str] = None
+    priorityScore: Optional[int] = None
+    priorityLevel: Optional[str] = None
+    priorityBreakdown: Optional[dict] = None
     evidence_verdict: Optional[str] = None
     evidence_reason: Optional[str] = None
     evidence_confidence: Optional[float] = None

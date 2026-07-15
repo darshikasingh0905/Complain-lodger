@@ -19,7 +19,7 @@ const SEED_COMPLAINTS = [
     pinCode: "411005",
     department: "Water Supply Department",
     category: "Water Leakage / Deficit",
-    priority: "High",
+    priority: "Critical",
     ai_severity: "Critical",
     ai_confidence: 0.95,
     ai_reason: "Complaint mentions massive pipeline leakage wasting millions of liters.",
@@ -28,6 +28,10 @@ const SEED_COMPLAINTS = [
     imagePreview: null,
     latitude: 18.5312,
     longitude: 73.8445,
+    priorityScore: 82,
+    priorityLevel: "Critical",
+    priorityBreakdown: { safetyRisk: 30, publicImpact: 20, essentialService: 20, urgency: 10, duplicates: 0, location: 5, timePending: 2 },
+    priorityReason: "Complaint prioritized due to: a safety risk flagged as Critical, and disruption to essential services, and near critical public location/infrastructure.",
     createdAt: "2026-07-12T10:30:00.000Z",
     submitted_at: "2026-07-12T10:30:00.000Z",
     updatedAt: "2026-07-13T14:20:00.000Z"
@@ -46,7 +50,7 @@ const SEED_COMPLAINTS = [
     pinCode: "411038",
     department: "Electricity Department",
     category: "Power Issue",
-    priority: "Medium",
+    priority: "High",
     ai_severity: "Moderate",
     ai_confidence: 0.88,
     ai_reason: "Dark road reported causing unsafe walking conditions.",
@@ -55,6 +59,10 @@ const SEED_COMPLAINTS = [
     imagePreview: null,
     latitude: 18.5074,
     longitude: 73.8077,
+    priorityScore: 55,
+    priorityLevel: "Medium",
+    priorityBreakdown: { safetyRisk: 15, publicImpact: 10, essentialService: 20, urgency: 5, duplicates: 0, location: 0, timePending: 2 },
+    priorityReason: "Complaint prioritized due to: disruption to essential services.",
     createdAt: "2026-07-14T18:45:00.000Z",
     submitted_at: "2026-07-14T18:45:00.000Z",
     updatedAt: "2026-07-14T18:45:00.000Z"
@@ -82,6 +90,10 @@ const SEED_COMPLAINTS = [
     imagePreview: null,
     latitude: 18.5679,
     longitude: 73.9143,
+    priorityScore: 73,
+    priorityLevel: "High",
+    priorityBreakdown: { safetyRisk: 30, publicImpact: 20, essentialService: 0, urgency: 10, duplicates: 5, location: 5, timePending: 3 },
+    priorityReason: "Complaint prioritized due to: a safety risk flagged as Critical, and linked to multiple similar reports, and near critical public location/infrastructure.",
     createdAt: "2026-07-15T09:15:00.000Z",
     submitted_at: "2026-07-15T09:15:00.000Z",
     updatedAt: "2026-07-15T11:00:00.000Z"
@@ -109,6 +121,10 @@ const SEED_COMPLAINTS = [
     imagePreview: null,
     latitude: 18.5089,
     longitude: 73.9258,
+    priorityScore: 22,
+    priorityLevel: "Low",
+    priorityBreakdown: { safetyRisk: 5, publicImpact: 5, essentialService: 0, urgency: 2, duplicates: 5, location: 5, timePending: 0 },
+    priorityReason: "Complaint classified with general parameters. Priority level: Low.",
     createdAt: "2026-07-10T08:00:00.000Z",
     submitted_at: "2026-07-10T08:00:00.000Z",
     updatedAt: "2026-07-12T16:30:00.000Z"
@@ -272,16 +288,160 @@ const generateId = () => {
   }
 };
 
+const CONFIG_PRIORITY = {
+  weights: {
+    safetyRisk: 30,
+    publicImpact: 20,
+    essentialService: 20,
+    urgency: 10,
+    duplicates: 10,
+    location: 5,
+    timePending: 5
+  },
+  safetyRiskMap: {
+    "High": 30,
+    "Critical": 30,
+    "Medium": 15,
+    "Moderate": 15,
+    "Low": 5,
+    "Minor": 5
+  },
+  publicImpactMap: {
+    "High": 20,
+    "Medium": 10,
+    "Low": 5
+  },
+  urgencyMap: {
+    "High": 10,
+    "Medium": 5,
+    "Low": 2
+  },
+  locationKeywords: [
+    "hospital", "clinic", "school", "college", "station", "highway",
+    "market", "airport", "bus stand", "bus stop", "metro", "railway"
+  ]
+};
+
+const calculateLocalPriority = (description, address, category, createdAt, status, aiResult, allComplaints) => {
+  const safetyVal = aiResult.severity || aiResult.safetyRisk || "Medium";
+  const safetyScore = CONFIG_PRIORITY.safetyRiskMap[safetyVal] !== undefined ? CONFIG_PRIORITY.safetyRiskMap[safetyVal] : 15;
+
+  const impactVal = aiResult.publicImpact || "Medium";
+  const impactScore = CONFIG_PRIORITY.publicImpactMap[impactVal] !== undefined ? CONFIG_PRIORITY.publicImpactMap[impactVal] : 10;
+
+  const essentialVal = !!aiResult.essentialService || ["Electricity Department", "Water Supply Department", "Public Health", "Fire Department"].includes(aiResult.department);
+  const essentialScore = essentialVal ? CONFIG_PRIORITY.weights.essentialService : 0;
+
+  const urgencyVal = aiResult.urgency || aiResult.priority || "Medium";
+  const urgencyScore = CONFIG_PRIORITY.urgencyMap[urgencyVal] !== undefined ? CONFIG_PRIORITY.urgencyMap[urgencyVal] : 5;
+
+  // Duplicate count
+  const duplicateCount = allComplaints.filter(c => c.category === category && c.area === address).length;
+  const duplicatesScore = Math.min(CONFIG_PRIORITY.weights.duplicates, duplicateCount * 5);
+
+  let locationScore = 0;
+  const combinedText = `${description} ${address || ""}`.toLowerCase();
+  if (CONFIG_PRIORITY.locationKeywords.some(kw => combinedText.includes(kw))) {
+    locationScore = CONFIG_PRIORITY.weights.location;
+  }
+
+  let timePendingScore = 0;
+  if (status !== "Resolved" && createdAt) {
+    const elapsedMs = Date.now() - new Date(createdAt).getTime();
+    const elapsedHours = elapsedMs / (1000 * 60 * 60);
+    timePendingScore = Math.min(CONFIG_PRIORITY.weights.timePending, Math.floor(elapsedHours / 24));
+  }
+
+  const totalScore = safetyScore + impactScore + essentialScore + urgencyScore + duplicatesScore + locationScore + timePendingScore;
+  const finalScore = Math.max(0, Math.min(100, totalScore));
+
+  let level = "Medium";
+  if (finalScore >= 81) level = "Critical";
+  else if (finalScore >= 61) level = "High";
+  else if (finalScore >= 31) level = "Medium";
+  else level = "Low";
+
+  const reasons = [];
+  if (safetyScore >= 15) reasons.push(`a safety risk flagged as ${safetyVal}`);
+  if (essentialVal) reasons.push("disruption to essential services");
+  if (duplicatesScore > 0) reasons.push(`linked to multiple similar reports (${duplicateCount} duplicate(s) detected)`);
+  if (locationScore > 0) reasons.push("near critical public location/infrastructure");
+
+  const reason = reasons.length > 0 
+    ? `Complaint prioritized due to: ${reasons.join(", and ")}.`
+    : `Complaint classified with general parameters. Priority level: ${level}.`;
+
+  return {
+    priorityScore: finalScore,
+    priorityLevel: level,
+    priorityBreakdown: {
+      safetyRisk: safetyScore,
+      publicImpact: impactScore,
+      essentialService: essentialScore,
+      urgency: urgencyScore,
+      duplicates: duplicatesScore,
+      location: locationScore,
+      timePending: timePendingScore
+    },
+    reason
+  };
+};
+
 // ─── Raw Storage Helpers ──────────────────────────────────────────────────────
 const _readAll = () => {
   try {
     const raw = localStorage.getItem(COMPLAINTS_KEY);
+    let list = [];
     if (!raw) {
+      list = SEED_COMPLAINTS;
       localStorage.setItem(COMPLAINTS_KEY, JSON.stringify(SEED_COMPLAINTS));
-      return SEED_COMPLAINTS;
+    } else {
+      list = JSON.parse(raw);
     }
-    return JSON.parse(raw);
-  } catch {
+    
+    // Automatically recalculate priorities on read to keep pending times / duplicate counts fresh
+    let changed = false;
+    const updated = list.map(c => {
+      const p = calculateLocalPriority(
+        c.description || "",
+        c.area || "",
+        c.category || "",
+        c.createdAt || c.submitted_at,
+        c.status || "Submitted",
+        {
+          severity: c.ai_severity,
+          safetyRisk: c.safetyRisk,
+          publicImpact: c.publicImpact,
+          essentialService: c.essentialService,
+          urgency: c.urgency,
+          priority: c.priority,
+          department: c.department
+        },
+        list.filter(other => other.id !== c.id)
+      );
+      
+      if (c.priorityScore !== p.priorityScore || c.priorityLevel !== p.priorityLevel) {
+        changed = true;
+        return {
+          ...c,
+          priorityScore: p.priorityScore,
+          priorityLevel: p.priorityLevel,
+          priorityBreakdown: p.priorityBreakdown,
+          priorityReason: p.reason,
+          priority: p.priorityLevel,
+          ai_reason: p.reason
+        };
+      }
+      return c;
+    });
+    
+    if (changed) {
+      _writeAll(updated);
+      return updated;
+    }
+    return list;
+  } catch (e) {
+    console.error("Local storage read error", e);
     return [];
   }
 };
@@ -358,6 +518,19 @@ export const createComplaint = async (payload) => {
     ai_result = runLocalClassification(complaint.title || "", complaint.description || "");
   }
 
+  const existing = _readAll();
+
+  // Calculate local priority
+  const p = calculateLocalPriority(
+    complaint.description || "",
+    complaintLocation.area || "",
+    ai_result.category || "",
+    now,
+    'Submitted',
+    ai_result,
+    existing
+  );
+
   const record = {
     id:             generateId(),
     citizenId:      (citizen.aadhaar || '').replace(/\s+/g, ''),
@@ -372,12 +545,16 @@ export const createComplaint = async (payload) => {
     pinCode:        complaintLocation.pinCode  || null,
     department:     ai_result.department,
     category:       ai_result.category,
-    priority:       ai_result.priority,
+    priority:       p.priorityLevel,
     ai_severity:    ai_result.severity,
     ai_confidence:  ai_result.confidence,
-    ai_reason:      ai_result.reason,
+    ai_reason:      p.reason,
     ai_keywords:    ai_result.keywords,
     ai_summary:     ai_result.reason,
+    priorityScore:  p.priorityScore,
+    priorityLevel:  p.priorityLevel,
+    priorityBreakdown: p.priorityBreakdown,
+    priorityReason: p.reason,
     status:         'Submitted',
     imagePreview:   imagePreview || null,
     latitude,
@@ -390,7 +567,6 @@ export const createComplaint = async (payload) => {
     updatedAt:      now,
   };
 
-  const existing = _readAll();
   existing.push(record);
   _writeAll(existing);
 
@@ -457,16 +633,30 @@ export const classifyComplaintAI = async (id) => {
     ai_result = runLocalClassification(c.title || "", c.description || "");
   }
 
+  // Calculate local priority
+  const p = calculateLocalPriority(
+    c.description || "",
+    c.area || "",
+    ai_result.category || "",
+    c.createdAt || c.submitted_at,
+    c.status || "Submitted",
+    ai_result,
+    all.filter(other => other.id !== c.id)
+  );
+
   all[idx] = {
     ...c,
     department: ai_result.department,
     category: ai_result.category,
-    priority: ai_result.priority,
+    priority: p.priorityLevel,
     ai_severity: ai_result.severity,
     ai_confidence: ai_result.confidence,
-    ai_reason: ai_result.reason,
+    ai_reason: p.reason,
     ai_keywords: ai_result.keywords,
     ai_summary: ai_result.reason,
+    priorityScore: p.priorityScore,
+    priorityLevel: p.priorityLevel,
+    priorityBreakdown: p.priorityBreakdown,
     updatedAt: new Date().toISOString()
   };
 

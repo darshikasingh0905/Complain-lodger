@@ -13,7 +13,9 @@ import {
   AlertCircle,
   FileText,
   ClipboardList,
-  PlusCircle
+  PlusCircle,
+  BarChart2,
+  Zap
 } from 'lucide-react';
 import { useComplaints } from '../context/ComplaintContext';
 import useAuth from '../hooks/useAuth';
@@ -162,6 +164,14 @@ function TrackComplaint() {
             <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
               {filtered.map((c) => {
                 const isSelected = current?.id === c.id;
+                const pLevel = c.priorityLevel || c.priority || 'Medium';
+                const pScore = c.priorityScore ?? null;
+                const pColor = {
+                  Critical: 'bg-red-500/10 text-red-400 border-red-500/20',
+                  High:     'bg-orange-500/10 text-orange-400 border-orange-500/20',
+                  Medium:   'bg-blue-500/10 text-blue-400 border-blue-500/20',
+                  Low:      'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+                }[pLevel] || 'bg-slate-800 text-slate-400 border-slate-700';
                 return (
                   <button
                     key={c.id}
@@ -174,9 +184,14 @@ function TrackComplaint() {
                   >
                     <div className="flex justify-between items-start gap-2">
                       <span className="font-mono font-bold text-sky-400 text-xs shrink-0">{c.id}</span>
-                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md border ${statusStyle(c.status)}`}>
-                        {c.status}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${pColor}`}>
+                          {pLevel}{pScore !== null ? ` · ${pScore}` : ''}
+                        </span>
+                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md border ${statusStyle(c.status)}`}>
+                          {c.status}
+                        </span>
+                      </div>
                     </div>
                     <p className="text-xs text-slate-200 font-semibold line-clamp-1">{c.title}</p>
                     <p className="text-[10px] text-slate-500">{c.area}</p>
@@ -289,14 +304,22 @@ function TrackComplaint() {
                       <span className="text-[11px] font-bold text-slate-200">{current.category || 'General'}</span>
                     </div>
                     <div>
-                      <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Assessed Priority</span>
-                      <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold rounded uppercase ${
-                        current.priority === 'High'   ? 'bg-rose-500/10 text-rose-400' :
-                        current.priority === 'Medium' ? 'bg-amber-500/10 text-amber-400' :
-                        'bg-emerald-500/10 text-emerald-400'
-                      }`}>
-                        {current.priority || 'Medium'}
-                      </span>
+                      <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Priority Level</span>
+                      {(() => {
+                        const lvl = current.priorityLevel || current.priority || 'Medium';
+                        const sc  = current.priorityScore ?? null;
+                        const cls = {
+                          Critical: 'bg-red-500/10 text-red-400 border border-red-500/20',
+                          High:     'bg-orange-500/10 text-orange-400 border border-orange-500/20',
+                          Medium:   'bg-blue-500/10 text-blue-400 border border-blue-500/20',
+                          Low:      'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
+                        }[lvl] || 'bg-slate-800 text-slate-400';
+                        return (
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[9px] font-black rounded uppercase ${cls}`}>
+                            {lvl}{sc !== null ? <span className="opacity-70">· {sc}/100</span> : null}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div>
                       <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">AI Severity</span>
@@ -354,6 +377,85 @@ function TrackComplaint() {
                     </div>
                   )}
                 </div>
+
+                {/* ── Priority Intelligence Panel ─────────────────────── */}
+                {(() => {
+                  const score  = current.priorityScore  ?? 0;
+                  const level  = current.priorityLevel  || current.priority || 'Medium';
+                  const bd     = current.priorityBreakdown || {};
+                  const reason = current.priorityReason  || current.ai_reason || null;
+
+                  const lc = {
+                    Critical: { bar: 'bg-red-500',    badge: 'bg-red-500/10 text-red-400 border-red-500/25',    gauge: 'from-red-600 to-red-400'    },
+                    High:     { bar: 'bg-orange-500', badge: 'bg-orange-500/10 text-orange-400 border-orange-500/25', gauge: 'from-orange-600 to-orange-400' },
+                    Medium:   { bar: 'bg-blue-500',   badge: 'bg-blue-500/10 text-blue-400 border-blue-500/25',  gauge: 'from-blue-600 to-blue-400'   },
+                    Low:      { bar: 'bg-emerald-500',badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25', gauge: 'from-emerald-600 to-emerald-400' },
+                  }[level] || { bar: 'bg-slate-500', badge: 'bg-slate-800 text-slate-400 border-slate-700', gauge: 'from-slate-600 to-slate-400' };
+
+                  const factors = [
+                    { label: 'Safety Risk',       val: bd.safetyRisk     ?? 0, max: 30 },
+                    { label: 'Public Impact',     val: bd.publicImpact   ?? 0, max: 20 },
+                    { label: 'Essential Service', val: bd.essentialService ?? 0, max: 20 },
+                    { label: 'Urgency',           val: bd.urgency        ?? 0, max: 10 },
+                    { label: 'Duplicates',        val: bd.duplicates     ?? 0, max: 10 },
+                    { label: 'Location',          val: bd.location       ?? 0, max: 5  },
+                    { label: 'Time Pending',      val: bd.timePending    ?? 0, max: 5  },
+                  ];
+
+                  return (
+                    <div className="bg-gradient-to-br from-slate-900/80 to-slate-950/80 border border-white/5 rounded-2xl p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <BarChart2 className="w-4 h-4 text-sky-400" />
+                          <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Priority Breakdown</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-lg border ${lc.badge}`}>{level}</span>
+                          <span className="font-mono font-black text-white text-sm">{score}<span className="text-slate-600 text-[10px] font-semibold">/100</span></span>
+                        </div>
+                      </div>
+
+                      {/* Gauge */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[9px] text-slate-600 font-semibold">
+                          <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
+                        </div>
+                        <div className="h-2.5 bg-slate-950 rounded-full overflow-hidden border border-white/5 relative">
+                          <div
+                            className={`h-full rounded-full bg-gradient-to-r ${lc.gauge} transition-all duration-700`}
+                            style={{ width: `${Math.min(score, 100)}%` }}
+                          />
+                          {[25,50,75].map(p => (
+                            <div key={p} className="absolute top-0 bottom-0 w-px bg-slate-800" style={{ left: `${p}%` }} />
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Factors */}
+                      <div className="space-y-2">
+                        {factors.map((f) => (
+                          <div key={f.label} className="flex items-center gap-3">
+                            <span className="text-[9px] text-slate-500 font-semibold w-28 shrink-0">{f.label}</span>
+                            <div className="flex-1 h-1.5 bg-slate-950 rounded-full overflow-hidden border border-white/5">
+                              <div
+                                className={`h-full rounded-full ${lc.bar} transition-all duration-500`}
+                                style={{ width: f.max > 0 ? `${Math.min((f.val/f.max)*100,100)}%` : '0%' }}
+                              />
+                            </div>
+                            <span className="font-mono text-[9px] text-slate-400 w-10 text-right shrink-0">{f.val}/{f.max}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {reason && (
+                        <div className="pt-3 border-t border-white/5 flex items-start gap-2">
+                          <Zap className="w-3 h-3 text-yellow-400 shrink-0 mt-0.5" />
+                          <p className="text-[10px] text-slate-400 italic leading-relaxed">{reason}</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Area */}
                 <div className="bg-slate-900/40 p-4 rounded-xl border border-white/5 text-xs">

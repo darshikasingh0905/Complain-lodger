@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Enum
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Enum, JSON
 from app.database.db import Base
 
 class Complaint(Base):
@@ -25,6 +25,11 @@ class Complaint(Base):
     ai_severity = Column(String(20), nullable=True)
     ai_keywords = Column(Text, nullable=True)
     
+    # Priority Engine Scoring Fields
+    priorityScore = Column(Integer, nullable=True, default=0)
+    priorityLevel = Column(String(20), nullable=True, default="Medium")
+    priorityBreakdown = Column(JSON, nullable=True)
+
     # Evidence Audit Fields (filled by Vision LLM)
     evidence_verdict = Column(String(20), nullable=True)  # MATCH, MISMATCH, UNCERTAIN
     evidence_reason = Column(Text, nullable=True)
@@ -55,6 +60,9 @@ class Complaint(Base):
             "ai_reason": self.ai_reason,
             "ai_severity": self.ai_severity,
             "ai_keywords": self.ai_keywords,
+            "priorityScore": self.priorityScore,
+            "priorityLevel": self.priorityLevel,
+            "priorityBreakdown": self.priorityBreakdown,
             "evidence_verdict": self.evidence_verdict,
             "evidence_reason": self.evidence_reason,
             "evidence_confidence": self.evidence_confidence,
