@@ -85,7 +85,7 @@ export const CitizenDashboard = () => {
             <div>
               <h3 className="text-sm font-bold text-white group-hover:text-sky-400 transition-colors">Lodge Complaint</h3>
               <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                Submit an public issue. Upload photos or locations for real-time AI-routing.
+                Submit a public issue. Upload photos or locations to route it for resolution.
               </p>
               <span className="mt-3.5 inline-flex items-center gap-1.5 text-[10px] font-black uppercase text-sky-400 tracking-wider">
                 <span>Open Form</span>
@@ -93,7 +93,7 @@ export const CitizenDashboard = () => {
               </span>
             </div>
           </button>
-
+ 
           {/* Card 2: Track Status UI */}
           <button
             onClick={() => navigate('/track')}
@@ -105,7 +105,7 @@ export const CitizenDashboard = () => {
             <div>
               <h3 className="text-sm font-bold text-white group-hover:text-indigo-400 transition-colors">Track Greevance</h3>
               <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                Inspect filed tickets. View AI classification summaries and real-time crew statuses.
+                Inspect filed tickets. View complaint summaries and real-time crew statuses.
               </p>
               <span className="mt-3.5 inline-flex items-center gap-1.5 text-[10px] font-black uppercase text-indigo-400 tracking-wider">
                 <span>View Statuses</span>

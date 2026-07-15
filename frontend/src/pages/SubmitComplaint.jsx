@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   User, Phone, Mail, Home, CreditCard,
   MapPin, Landmark, Hash,
   FileText, AlignLeft,
   CheckCircle, Copy, Trash2,
   AlertCircle, Loader2, ShieldCheck,
-  Bot, Sparkles, Navigation, ImagePlus
+  Navigation, ImagePlus
 } from 'lucide-react';
 import { getCitizenProfile } from '../services/citizenService';
-import { submitComplaint } from '../services/complaintService';
+import { useComplaints } from '../context/ComplaintContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_IMAGES = 5;
@@ -68,6 +69,9 @@ const SectionHeading = ({ step, title, subtitle }) => (
 
 // ─── Main Component ────────────────────────────────────────────────────────
 function SubmitComplaint() {
+  const navigate = useNavigate();
+  const { addComplaint } = useComplaints();
+
   // ── Citizen profile ──────────────────────────────────────────────────────
   const [citizen, setCitizen] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -166,13 +170,15 @@ function SubmitComplaint() {
 
     setSubmitting(true);
     try {
-      // Call AI classification hook-point
-      const aiResult = await aiClassifyComplaint({
-        title:       title.trim(),
-        description: description.trim(),
-        location:    area.trim(),
-        images:      images.map((i) => i.file.name)
-      });
+      // Convert first image to a data-URL so it persists in localStorage
+      let imagePreview = null;
+      if (images.length > 0) {
+        imagePreview = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (ev) => resolve(ev.target.result);
+          reader.readAsDataURL(images[0].file);
+        });
+      }
 
       const payload = {
         citizen: {
@@ -190,15 +196,16 @@ function SubmitComplaint() {
         complaint: {
           title:       title.trim(),
           description: description.trim(),
-          department:  aiResult.department,
-          priority:    aiResult.priority
-        }
+          department:  'Pending Classification',
+          priority:    'Pending'
+        },
+        imagePreview
       };
 
-      const record = await submitComplaint(payload);
+      const record = await addComplaint(payload);
       setSuccessRecord(record);
 
-      // Reset
+      // Reset form
       setArea(''); setLandmark(''); setPinCode('');
       setTitle(''); setDescription('');
       images.forEach((i) => URL.revokeObjectURL(i.preview));
@@ -211,7 +218,7 @@ function SubmitComplaint() {
   };
 
   const copyId = () => {
-    navigator.clipboard.writeText(successRecord.complaintId);
+    navigator.clipboard.writeText(successRecord.id);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -227,12 +234,12 @@ function SubmitComplaint() {
           <div>
             <h2 className="text-xl font-black text-white">Complaint Registered!</h2>
             <p className="text-slate-400 text-xs mt-1.5 leading-relaxed">
-              Your grievance has been recorded. Our AI will classify and route it to the correct department shortly.
+              Your grievance has been recorded and will be routed to the correct department shortly.
             </p>
           </div>
           <div className="bg-slate-950/60 border border-white/5 rounded-2xl px-6 py-4 space-y-1">
             <p className="text-[10px] text-slate-500 uppercase font-extrabold tracking-widest">Complaint ID</p>
-            <p className="text-2xl font-black font-mono text-sky-400">{successRecord.complaintId}</p>
+            <p className="text-2xl font-black font-mono text-sky-400">{successRecord.id}</p>
             <button
               onClick={copyId}
               className="mt-1 inline-flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-white transition-colors cursor-pointer"
@@ -243,10 +250,10 @@ function SubmitComplaint() {
           </div>
           <div className="text-left bg-slate-900/40 border border-white/5 rounded-2xl p-4 text-xs space-y-2.5">
             {[
-              ['Title',      successRecord.complaint.title],
-              ['Area',       successRecord.complaintLocation.area],
-              ['AI Routing', successRecord.complaint.department],
-              ['Priority',   successRecord.complaint.priority],
+              ['Title',      successRecord.title],
+              ['Area',       successRecord.area],
+              ['Department', successRecord.department],
+              ['Priority',   successRecord.priority],
               ['Status',     successRecord.status]
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between gap-2">
@@ -255,12 +262,20 @@ function SubmitComplaint() {
               </div>
             ))}
           </div>
-          <button
-            onClick={() => setSuccessRecord(null)}
-            className="w-full py-2.5 bg-sky-600/15 hover:bg-sky-600/25 text-sky-400 border border-sky-500/20 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
-          >
-            Lodge Another Complaint
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => navigate('/track')}
+              className="flex-1 py-2.5 bg-sky-600 hover:bg-sky-500 text-white border border-sky-500/30 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+            >
+              Track My Complaint
+            </button>
+            <button
+              onClick={() => setSuccessRecord(null)}
+              className="flex-1 py-2.5 bg-sky-600/15 hover:bg-sky-600/25 text-sky-400 border border-sky-500/20 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+            >
+              Lodge Another
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -275,7 +290,7 @@ function SubmitComplaint() {
         <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-sky-500 to-indigo-600" />
         <h1 className="text-lg font-black text-white">Lodge a Grievance</h1>
         <p className="text-xs text-slate-400 mt-1">
-          AI will automatically classify and route your complaint to the correct government department.
+          Provide the details and location of your grievance to submit it to the appropriate department.
         </p>
       </div>
 
@@ -396,7 +411,7 @@ function SubmitComplaint() {
           <SectionHeading
             step="3"
             title="Complaint Details"
-            subtitle="Describe the issue clearly — AI will classify and route it automatically."
+            subtitle="Describe the issue clearly..."
           />
 
           {/* Submit error */}
@@ -436,7 +451,7 @@ function SubmitComplaint() {
                 onChange={(e) => setDescription(e.target.value)}
                 maxLength={1000}
                 rows={6}
-                placeholder="Describe the issue in detail. Include what happened, when it started, nearby landmarks, and any additional information that will help our AI understand the complaint."
+                placeholder="Describe the issue in detail. Include what happened, when it started, nearby landmarks, and any additional information that will help resolve the complaint."
                 className={`w-full bg-slate-900/60 border rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none resize-none transition-colors ${errors.description ? 'border-rose-500/50' : 'border-slate-800 focus:border-sky-500'}`}
               />
             </div>
@@ -515,14 +530,6 @@ function SubmitComplaint() {
               </div>
             )}
             <FieldError message={errors.images} />
-
-            {/* AI analysis notice */}
-            <div className="flex items-start gap-2 mt-3 p-3 bg-slate-900/50 border border-white/5 rounded-xl">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5" />
-              <p className="text-[10px] text-slate-400 leading-relaxed">
-                <span className="font-bold text-indigo-300">AI Analysis:</span> Your complaint description, location, and uploaded images will be analyzed to automatically identify the appropriate government department and prioritize the complaint for faster resolution.
-              </p>
-            </div>
           </div>
 
           {/* Submit */}
@@ -532,7 +539,7 @@ function SubmitComplaint() {
             className="w-full py-3.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-lg shadow-sky-600/10 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-950 flex items-center justify-center gap-2"
           >
             {submitting ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Submitting & Routing via AI…</>
+              <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</>
             ) : (
               <><Navigation className="w-4 h-4" /> Submit Grievance</>
             )}

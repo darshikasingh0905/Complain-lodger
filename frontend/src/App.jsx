@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ComplaintProvider } from './context/ComplaintContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleGuard from './components/RoleGuard';
 
@@ -26,6 +27,7 @@ import HeatmapView from './pages/HeatmapView';
 function App() {
   return (
     <AuthProvider>
+      <ComplaintProvider>
       <Router>
         <div className="min-h-screen bg-slate-950 flex flex-col text-slate-100 selection:bg-sky-500 selection:text-white p-4 md:p-8 relative overflow-x-hidden">
           {/* Background decorative styling */}
@@ -102,11 +104,12 @@ function App() {
           </main>
 
           <footer className="text-center text-xs text-slate-700 pt-8 mt-12 border-t border-slate-900">
-            <p>© 2026 AI-Powered Grievance Lodging and Tracking System (Hackathon Ready)</p>
+            <p>© 2026 Grievance Lodging and Tracking System (Hackathon Ready)</p>
             <p className="text-slate-500 font-medium mt-1">Component Verification Stable</p>
           </footer>
         </div>
       </Router>
+      </ComplaintProvider>
     </AuthProvider>
   );
 }
