@@ -40,13 +40,16 @@ function SubmitComplaint() {
     setImagePreview(null);
   };
 
-  // Geo Location Query
+  // Geo Location Query with IP-based fallback
   const fetchLocation = () => {
+    setLocating(true);
+    setErrorMsg(null);
+
     if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser");
+      fallbackToIpGeo();
       return;
     }
-    setLocating(true);
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setFormData((prev) => ({
@@ -58,12 +61,32 @@ function SubmitComplaint() {
         setLocating(false);
       },
       (error) => {
-        console.error("Location error:", error);
-        setErrorMsg("Failed to access location. Please input coordinates manually.");
-        setLocating(false);
+        console.warn("HTML5 Geolocation failed/timed out, trying IP-based fallback:", error);
+        fallbackToIpGeo();
       },
-      { enableHighAccuracy: true, timeout: 8000 }
+      { enableHighAccuracy: false, timeout: 4000 }
     );
+  };
+
+  const fallbackToIpGeo = async () => {
+    try {
+      const response = await axios.get('https://ipapi.co/json/');
+      if (response.data && response.data.latitude && response.data.longitude) {
+        setFormData((prev) => ({
+          ...prev,
+          latitude: parseFloat(response.data.latitude).toFixed(6),
+          longitude: parseFloat(response.data.longitude).toFixed(6),
+          address: prev.address || `${response.data.city || 'Detected Area'}, ${response.data.region || ''}`
+        }));
+      } else {
+        throw new Error("Invalid IP payload response");
+      }
+    } catch (err) {
+      console.error("IP Geolocation fallback failed:", err);
+      setErrorMsg("Live GPS unavailable. Please enter coordinates manually (e.g. 28.6139, 77.2090).");
+    } finally {
+      setLocating(false);
+    }
   };
 
   const handleFormSubmit = async (e) => {
