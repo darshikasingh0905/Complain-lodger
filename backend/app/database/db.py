@@ -18,19 +18,25 @@ def create_database_if_not_exists(url_str: str):
     the targeted database schema exists.
     """
     try:
-        from sqlalchemy.engine import make_url
+        from sqlalchemy.engine import make_url, URL
         url = make_url(url_str)
         dbname = url.database
         
-        # Build server URI (without the database name)
-        passwd = f":{url.password}" if url.password else ""
-        port = f":{url.port}" if url.port else ""
-        server_url = f"mysql+pymysql://{url.username}{passwd}@{url.host}{port}"
+        # Build server URI without the database name using SQLAlchemy URL object
+        # (avoids manual string splicing which breaks on special chars like @)
+        server_url = URL.create(
+            drivername=url.drivername,
+            username=url.username,
+            password=url.password,
+            host=url.host,
+            port=url.port,
+            database=None,
+        )
         
         server_engine = create_engine(server_url)
         with server_engine.connect() as conn:
-            conn.execute(text(f"CREATE DATABASE IF NOT EXISTS {dbname}"))
-            conn.execute(text(f"ALTER DATABASE {dbname} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"))
+            conn.execute(text(f"CREATE DATABASE IF NOT EXISTS `{dbname}`"))
+            conn.execute(text(f"ALTER DATABASE `{dbname}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"))
             conn.commit()
         server_engine.dispose()
         print(f"Database verification finished. Verified database '{dbname}' exists.")

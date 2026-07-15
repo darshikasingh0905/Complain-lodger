@@ -3,19 +3,9 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import SubmitComplaint from './pages/SubmitComplaint';
 import TrackComplaint from './pages/TrackComplaint';
+import AdminPanel from './pages/AdminPanel';
 
 // Temporary placeholder screens for future milestones to support routing links
-
-function AdminPlaceholder() {
-  return (
-    <div className="glass-panel p-8 rounded-3xl text-center max-w-md mx-auto relative border border-white/5 shadow-xl">
-      <h2 className="text-xl font-bold text-white mb-2">Government Admin Area</h2>
-      <p className="text-slate-400 text-xs md:text-sm">
-        Department dispatch and ticket resolution dashboard. This system connects to models in Milestone 6.
-      </p>
-    </div>
-  );
-}
 
 function AnalyticsPlaceholder() {
   return (
@@ -43,7 +33,7 @@ function App() {
           <Routes>
             <Route path="/" element={<SubmitComplaint />} />
             <Route path="/track" element={<TrackComplaint />} />
-            <Route path="/admin" element={<AdminPlaceholder />} />
+            <Route path="/admin" element={<AdminPanel />} />
             <Route path="/analytics" element={<AnalyticsPlaceholder />} />
           </Routes>
         </main>

@@ -83,7 +83,7 @@ root/
 - [x] **Milestone 3**: Complaint submission page UI and frontend connection
 - [x] **Milestone 4**: Ollama backend classification service integration
 - [x] **Milestone 5**: Step-by-step grievance tracking workspace interface
-- [ ] **Milestone 6**: Admin dashboard, filtering tools, status updates
+- [x] **Milestone 6**: Admin dashboard, filtering tools, status updates
 - [ ] **Milestone 7**: AI target image/complaint verification (Evidence Analyzer)
 - [ ] **Milestone 8**: Geographical heatmap layout via Leaflet Map
 - [ ] **Milestone 9**: Chronological predictive analysis for hotspot surges
