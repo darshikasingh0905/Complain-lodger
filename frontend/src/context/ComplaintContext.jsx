@@ -2,8 +2,10 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import {
   getComplaints,
   createComplaint,
-  updateComplaintStatus,
+  updateComplaint,
   deleteComplaint,
+  classifyComplaintAI,
+  auditEvidenceAI,
 } from '../services/complaintService';
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -24,9 +26,6 @@ export const ComplaintProvider = ({ children }) => {
   /**
    * Add a new complaint.
    * Saves to localStorage and immediately updates React state.
-   *
-   * @param {Object} payload  Same shape as createComplaint() expects
-   * @returns {Promise<Object>}  The saved flat record
    */
   const addComplaint = useCallback(async (payload) => {
     const record = await createComplaint(payload);
@@ -36,30 +35,50 @@ export const ComplaintProvider = ({ children }) => {
 
   /**
    * Update status on a single complaint.
-   * Saves to localStorage and immediately updates React state.
-   *
-   * @param {string} id
-   * @param {string} newStatus
-   * @returns {Promise<Object>}  Updated record
    */
   const updateStatus = useCallback(async (id, newStatus) => {
-    const updated = await updateComplaintStatus(id, newStatus);
-    setComplaints((prev) => prev.map((c) => (c.id === id ? updated : c)));
+    const updated = await updateComplaint(id, { status: newStatus });
+    setComplaints((prev) => prev.map((c) => (c.id.toLowerCase() === id.toLowerCase() ? updated : c)));
+    return updated;
+  }, []);
+
+  /**
+   * Update a complaint with arbitrary fields.
+   */
+  const updateComplaintData = useCallback(async (id, data) => {
+    const updated = await updateComplaint(id, data);
+    setComplaints((prev) => prev.map((c) => (c.id.toLowerCase() === id.toLowerCase() ? updated : c)));
+    return updated;
+  }, []);
+
+  /**
+   * Run simulated AI classification and update state.
+   */
+  const reclassifyComplaint = useCallback(async (id) => {
+    const updated = await classifyComplaintAI(id);
+    setComplaints((prev) => prev.map((c) => (c.id.toLowerCase() === id.toLowerCase() ? updated : c)));
+    return updated;
+  }, []);
+
+  /**
+   * Run simulated AI evidence audit and update state.
+   */
+  const auditEvidence = useCallback(async (id) => {
+    const updated = await auditEvidenceAI(id);
+    setComplaints((prev) => prev.map((c) => (c.id.toLowerCase() === id.toLowerCase() ? updated : c)));
     return updated;
   }, []);
 
   /**
    * Remove a complaint.
-   * @param {string} id
    */
   const removeComplaint = useCallback(async (id) => {
     await deleteComplaint(id);
-    setComplaints((prev) => prev.filter((c) => c.id !== id));
+    setComplaints((prev) => prev.filter((c) => c.id.toLowerCase() !== id.toLowerCase()));
   }, []);
 
   /**
    * Force re-read all complaints from localStorage.
-   * Useful after importing data from an external source.
    */
   const refreshComplaints = useCallback(async () => {
     const all = await getComplaints();
@@ -71,6 +90,9 @@ export const ComplaintProvider = ({ children }) => {
     loadingComplaints,
     addComplaint,
     updateStatus,
+    updateComplaint: updateComplaintData,
+    reclassifyComplaint,
+    auditEvidence,
     removeComplaint,
     refreshComplaints,
   };

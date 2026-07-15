@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import axios from 'axios';
+import React, { useState, useMemo } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -23,8 +22,7 @@ import {
   Info,
   X,
 } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+import { useComplaints } from '../context/ComplaintContext';
 
 // ─── Department colour config ─────────────────────────────────────────────────
 const DEPT_COLORS = {
@@ -95,32 +93,25 @@ function StatBar({ label, count, total, color }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function HeatmapView() {
-  const [allPoints, setAllPoints]   = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState('');
-  const [selectedPin, setSelectedPin] = useState(null);
+  const { complaints, loadingComplaints } = useComplaints();
+  const [error]                           = useState('');
+  const [selectedPin, setSelectedPin]     = useState(null);
 
   // Filters
-  const [deptFilter, setDeptFilter]       = useState('All');
-  const [priorityFilter, setPriorityFilter] = useState('All');
-  const [statusFilter, setStatusFilter]   = useState('All');
-  const [showHeat, setShowHeat]           = useState(true);  // heat vs pin mode
+  const [deptFilter, setDeptFilter]           = useState('All');
+  const [priorityFilter, setPriorityFilter]   = useState('All');
+  const [statusFilter, setStatusFilter]       = useState('All');
+  const [showHeat, setShowHeat]               = useState(true);
 
-  // ── Fetch map data ──────────────────────────────────────────────────────────
-  const fetchData = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const res = await axios.get(`${API_URL}/complaints/map-data`);
-      setAllPoints(res.data);
-    } catch (err) {
-      setError('Failed to load map data. Make sure the backend is running.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Derive geolocated points from context complaints
+  const allPoints = useMemo(
+    () => complaints.filter((c) => c.latitude != null && c.longitude != null),
+    [complaints]
+  );
 
-  useEffect(() => { fetchData(); }, []);
+  const loading = loadingComplaints;
+
+
 
   // ── Filter points ───────────────────────────────────────────────────────────
   const filtered = useMemo(() => allPoints.filter(p => {

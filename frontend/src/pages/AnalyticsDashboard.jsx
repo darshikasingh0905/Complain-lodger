@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
+import React, { useState, useMemo } from 'react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -30,7 +29,7 @@ import {
   Zap
 } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+import { useComplaints } from '../context/ComplaintContext';
 
 const PRIORITY_COLORS = {
   High: '#ef4444',   // Red
@@ -68,48 +67,97 @@ const RISK_BADGES = {
 };
 
 export default function AnalyticsDashboard() {
-  const [data, setData] = useState({
-    trend: [],
-    departments: [],
-    priorities: [],
-    emerging_hotspots: []
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { complaints, loadingComplaints } = useComplaints();
+  const [error] = useState(null);
+  const loading = loadingComplaints;
 
-  const fetchTrends = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await axios.get(`${API_URL}/complaints/trends`);
-      setData(res.data);
-    } catch (e) {
-      console.error(e);
-      setError('Could not retrieve chronological tracking indexes.');
-    } finally {
-      setLoading(false);
+  // ── Derive trend: complaints grouped by date (last 14 days) ──────────────
+  const trendData = useMemo(() => {
+    const days = 14;
+    const counts = {};
+    const today = new Date();
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      counts[key] = 0;
     }
+    complaints.forEach((c) => {
+      const key = (c.submitted_at || c.createdAt || '').slice(0, 10);
+      if (key in counts) counts[key] += 1;
+    });
+    return Object.entries(counts).map(([date, Complaints]) => ({
+      date: date.slice(5), // MM-DD
+      Complaints
+    }));
+  }, [complaints]);
+
+  // ── Derive departments bar chart data ─────────────────────────────────────
+  const departmentsData = useMemo(() => {
+    const counts = {};
+    complaints.forEach((c) => {
+      const dept = c.department || 'Other';
+      counts[dept] = (counts[dept] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, Grievances]) => ({ name, Grievances }))
+      .sort((a, b) => b.Grievances - a.Grievances);
+  }, [complaints]);
+
+  // ── Derive priority pie chart data ────────────────────────────────────────
+  const prioritiesData = useMemo(() => {
+    const counts = { High: 0, Medium: 0, Low: 0 };
+    complaints.forEach((c) => {
+      const p = c.priority || 'Low';
+      counts[p] = (counts[p] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [complaints]);
+
+  // ── Derive emerging hotspots: depts with rapid recent growth ─────────────
+  const emergingHotspots = useMemo(() => {
+    const now = Date.now();
+    const week = 7 * 24 * 60 * 60 * 1000;
+    const recentCounts = {};
+    const totalCounts = {};
+    complaints.forEach((c) => {
+      const dept = c.department || 'Other';
+      totalCounts[dept] = (totalCounts[dept] || 0) + 1;
+      const ts = new Date(c.submitted_at || c.createdAt || 0).getTime();
+      if (now - ts < week) recentCounts[dept] = (recentCounts[dept] || 0) + 1;
+    });
+    return Object.entries(totalCounts)
+      .map(([area, total]) => {
+        const recent = recentCounts[area] || 0;
+        const growth = total > 0 ? Math.round((recent / total) * 100) : 0;
+        const risk = growth >= 60 ? 'CRITICAL' : growth >= 30 ? 'WARNING' : 'STABLE';
+        return { area, total, recent, growth, risk };
+      })
+      .sort((a, b) => b.recent - a.recent)
+      .slice(0, 4);
+  }, [complaints]);
+
+  // Pack into the shape the render expects
+  const data = {
+    trend: trendData,
+    departments: departmentsData,
+    priorities: prioritiesData,
+    emerging_hotspots: emergingHotspots,
   };
 
-  useEffect(() => {
-    fetchTrends();
-  }, []);
-
-  // Summary Metrics calculations
-  const totalGrievances = useMemo(() => {
-    return data.departments.reduce((acc, curr) => acc + curr.Grievances, 0);
-  }, [data.departments]);
+  // Summary Metrics
+  const totalGrievances = complaints.length;
 
   const topDept = useMemo(() => {
-    if (data.departments.length === 0) return { name: 'N/A', count: 0 };
-    return data.departments.reduce((max, curr) => 
-      curr.Grievances > max.count ? { name: curr.name, count: curr.Grievances } : max
-    , { name: 'None', count: -1 });
-  }, [data.departments]);
+    if (departmentsData.length === 0) return { name: 'N/A', count: 0 };
+    const top = departmentsData[0];
+    return { name: top.name, count: top.Grievances };
+  }, [departmentsData]);
 
-  const criticalCount = useMemo(() => {
-    return data.emerging_hotspots.filter(h => h.risk === 'CRITICAL').length;
-  }, [data.emerging_hotspots]);
+  const criticalCount = useMemo(() =>
+    emergingHotspots.filter(h => h.risk === 'CRITICAL').length,
+    [emergingHotspots]
+  );
 
   const chartTheme = {
     tooltipStyle: {

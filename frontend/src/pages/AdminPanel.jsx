@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import { useComplaints } from '../context/ComplaintContext';
 import {
   LayoutDashboard,
@@ -42,7 +41,7 @@ const DEPARTMENTS = [
 ];
 
 function AdminPanel() {
-  const { complaints, loadingComplaints, updateStatus } = useComplaints();
+  const { complaints, loadingComplaints, updateStatus, reclassifyComplaint, auditEvidence } = useComplaints();
   const [selectedComplaint, setSelectedComplaint] = useState(null);
 
   // Filters
@@ -89,17 +88,13 @@ function AdminPanel() {
     setReclassifying(true);
     setActionSuccess(null);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-      const response = await axios.post(`${apiUrl}/complaints/${cid}/classify`);
-      
-      // Update local lists
-      setComplaints(prev => prev.map(c => c.id === cid ? response.data : c));
-      setSelectedComplaint(response.data);
+      const updated = await reclassifyComplaint(cid);
+      setSelectedComplaint(updated);
       setActionSuccess("AI route optimization refreshed!");
       setTimeout(() => setActionSuccess(null), 3000);
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.detail || "AI Reclassification pipeline failed.");
+      alert(err.message || "AI Reclassification pipeline failed.");
     } finally {
       setReclassifying(false);
     }
@@ -110,11 +105,9 @@ function AdminPanel() {
     setAuditingEvidence(true);
     setActionSuccess(null);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-      const response = await axios.post(`${apiUrl}/complaints/${cid}/analyze-evidence`);
-      setComplaints(prev => prev.map(c => c.id === cid ? response.data : c));
-      setSelectedComplaint(response.data);
-      const v = response.data.evidence_verdict;
+      const updated = await auditEvidence(cid);
+      setSelectedComplaint(updated);
+      const v = updated.evidence_verdict;
       setActionSuccess(
         v === 'MATCH' ? '✅ Evidence verified — image matches the complaint.' :
         v === 'MISMATCH' ? '⚠️ Mismatch detected — image may not relate to reported issue.' :
@@ -122,7 +115,7 @@ function AdminPanel() {
       );
       setTimeout(() => setActionSuccess(null), 5000);
     } catch (err) {
-      alert(err.response?.data?.detail || 'Evidence audit failed. Vision model may be unavailable.');
+      alert(err.message || 'Evidence audit failed.');
     } finally {
       setAuditingEvidence(false);
     }
@@ -527,7 +520,7 @@ function AdminPanel() {
                     </button>
 
                     {/* Evidence Audit Button */}
-                    {selectedComplaint.image_url && (
+                    {(selectedComplaint.imagePreview || selectedComplaint.image_url) && (
                       <button
                         id={`admin-audit-evidence-btn-${selectedComplaint.id}`}
                         disabled={auditingEvidence}

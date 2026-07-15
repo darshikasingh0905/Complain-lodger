@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import {
   ShieldCheck, ShieldAlert, ShieldQuestion,
   Search, Loader2, ScanSearch, AlertCircle,
   Image as ImageIcon, MapPin, Tag, Building2,
   ChevronRight, Sparkles, CheckCircle2, XCircle, HelpCircle
 } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+import { useComplaints } from '../context/ComplaintContext';
 
 // ─── Verdict Config ───────────────────────────────────────────────────────────
 const VERDICT_CONFIG = {
@@ -74,6 +72,7 @@ function ConfidenceBar({ confidence, barClass }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function EvidenceAnalyzer() {
+  const { complaints, auditEvidence } = useComplaints();
   const [searchId, setSearchId] = useState('');
   const [complaint, setComplaint] = useState(null);
   const [loadingSearch, setLoadingSearch] = useState(false);
@@ -82,64 +81,60 @@ export default function EvidenceAnalyzer() {
   const [auditError, setAuditError] = useState('');
   const [auditResult, setAuditResult] = useState(null); // filled after audit
 
-  // ── Fetch complaint by ID ─────────────────────────────────────────────────
+  // ── Find complaint by ID from context ────────────────────────────────────
   const handleSearch = async (e) => {
     e.preventDefault();
-    if (!searchId.trim()) return;
+    const query = searchId.trim().toUpperCase();
+    if (!query) return;
     setLoadingSearch(true);
     setSearchError('');
     setComplaint(null);
     setAuditResult(null);
     setAuditError('');
     try {
-      const res = await axios.get(`${API_URL}/complaints/${searchId.trim()}`);
-      setComplaint(res.data);
-      // If already audited, pre-fill result
-      if (res.data.evidence_verdict) {
+      await new Promise((r) => setTimeout(r, 300));
+      const found = complaints.find((c) => c.id.toUpperCase() === query);
+      if (!found) {
+        setSearchError('Complaint not found. Please check the ID (e.g. CMP-0001).');
+        return;
+      }
+      setComplaint(found);
+      // Pre-fill audit result if already audited
+      if (found.evidence_verdict) {
         setAuditResult({
-          verdict: res.data.evidence_verdict,
-          reason: res.data.evidence_reason,
-          confidence: res.data.evidence_confidence ?? 0,
+          verdict: found.evidence_verdict,
+          reason: found.evidence_reason,
+          confidence: found.evidence_confidence ?? 0,
         });
       }
-    } catch (err) {
-      setSearchError(
-        err.response?.data?.detail || 'Complaint not found. Please check the ID.'
-      );
     } finally {
       setLoadingSearch(false);
     }
   };
 
-  // ── Trigger vision audit ──────────────────────────────────────────────────
+  // ── Trigger evidence audit via context ───────────────────────────────────
   const handleAudit = async () => {
     if (!complaint) return;
     setLoadingAudit(true);
     setAuditError('');
     setAuditResult(null);
     try {
-      const res = await axios.post(
-        `${API_URL}/complaints/${complaint.id}/analyze-evidence`
-      );
-      setComplaint(res.data);
+      const updated = await auditEvidence(complaint.id);
+      setComplaint(updated);
       setAuditResult({
-        verdict: res.data.evidence_verdict,
-        reason: res.data.evidence_reason,
-        confidence: res.data.evidence_confidence ?? 0,
+        verdict: updated.evidence_verdict,
+        reason: updated.evidence_reason,
+        confidence: updated.evidence_confidence ?? 0,
       });
     } catch (err) {
-      setAuditError(
-        err.response?.data?.detail ||
-          'Evidence analysis failed. The vision model may be unavailable.'
-      );
+      setAuditError(err.message || 'Evidence analysis failed.');
     } finally {
       setLoadingAudit(false);
     }
   };
 
-  const imageUrl = complaint?.image_url
-    ? `${API_URL.replace('/api', '')}/${complaint.image_url}`
-    : null;
+  // Resolve image: prefer local data-URL preview, fall back to nothing
+  const imageUrl = complaint?.imagePreview || null;
 
   const cfg = auditResult ? VERDICT_CONFIG[auditResult.verdict] ?? VERDICT_CONFIG.UNCERTAIN : null;
 

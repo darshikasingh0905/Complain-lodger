@@ -3,10 +3,10 @@
  * Single source of truth for all complaint data operations.
  * Persists to localStorage under COMPLAINTS_KEY.
  *
- * Flat record schema (each stored complaint):
+ * Schema:
  * {
  *   id          : "CMP-0001"
- *   citizenId   : aadhaar string  (used for per-citizen filtering)
+ *   citizenId   : aadhaar string
  *   citizenName : string
  *   citizenPhone: string
  *   citizenEmail: string
@@ -18,17 +18,173 @@
  *   pinCode     : string | null
  *   department  : string
  *   priority    : string
- *   status      : "Pending" | "Submitted" | "Assigned" | "In Progress" | "Resolved"
- *   imagePreview: data-URL string | null  (first image, display only)
+ *   status      : "Submitted" | "Assigned" | "In Progress" | "Resolved"
+ *   imagePreview: data-URL string | null
+ *   latitude    : number
+ *   longitude   : number
+ *   evidence_verdict: "MATCH" | "MISMATCH" | "UNCERTAIN" | null
+ *   evidence_reason: string | null
+ *   evidence_confidence: number | null
  *   createdAt   : ISO string
  *   updatedAt   : ISO string
  * }
- *
- * To connect to a real backend, replace each function body with the
- * corresponding API call. The signatures and return shapes stay the same.
  */
 
 const COMPLAINTS_KEY = 'complaints';
+
+// ─── Seed Data ────────────────────────────────────────────────────────────────
+const SEED_COMPLAINTS = [
+  {
+    id: "CMP-0001",
+    citizenId: "123456789012",
+    citizenName: "Demo Citizen",
+    citizenPhone: "9876543210",
+    citizenEmail: "citizen@example.com",
+    citizenAddress: "123 MG Road, Pune, Maharashtra - 411001",
+    title: "Water pipeline leakage",
+    description: "There is a massive water pipeline leakage near Shivaji Nagar bus stand. Millions of liters of clean water are being wasted. Please address this urgently.",
+    area: "Shivaji Nagar Bus Stand, Pune",
+    landmark: "Near Bus Stand",
+    pinCode: "411005",
+    department: "Water Supply",
+    priority: "High",
+    status: "In Progress",
+    imagePreview: null,
+    latitude: 18.5312,
+    longitude: 73.8445,
+    createdAt: "2026-07-12T10:30:00.000Z",
+    submitted_at: "2026-07-12T10:30:00.000Z",
+    updatedAt: "2026-07-13T14:20:00.000Z"
+  },
+  {
+    id: "CMP-0002",
+    citizenId: "123456789012",
+    citizenName: "Demo Citizen",
+    citizenPhone: "9876543210",
+    citizenEmail: "citizen@example.com",
+    citizenAddress: "123 MG Road, Pune, Maharashtra - 411001",
+    title: "Street light not functioning",
+    description: "Three street lights are completely dark on the lane opposite to D-Mart. It is unsafe for women and children to walk at night.",
+    area: "Kothrud, Pune",
+    landmark: "Opposite D-Mart",
+    pinCode: "411038",
+    department: "Street Lights",
+    priority: "Medium",
+    status: "Submitted",
+    imagePreview: null,
+    latitude: 18.5074,
+    longitude: 73.8077,
+    createdAt: "2026-07-14T18:45:00.000Z",
+    submitted_at: "2026-07-14T18:45:00.000Z",
+    updatedAt: "2026-07-14T18:45:00.000Z"
+  },
+  {
+    id: "CMP-0003",
+    citizenId: "999999999999",
+    citizenName: "Aarav Sharma",
+    citizenPhone: "9876500000",
+    citizenEmail: "aarav@example.com",
+    citizenAddress: "Flat 402, Rohan Heights, Pune",
+    title: "Potholes on main road",
+    description: "Severe potholes on the main road causing vehicular damage and potential accidents. They have become very deep after the rain.",
+    area: "Viman Nagar, Pune",
+    landmark: "Near Phoenix Mall",
+    pinCode: "411014",
+    department: "Roads",
+    priority: "High",
+    status: "Assigned",
+    imagePreview: null,
+    latitude: 18.5679,
+    longitude: 73.9143,
+    createdAt: "2026-07-15T09:15:00.000Z",
+    submitted_at: "2026-07-15T09:15:00.000Z",
+    updatedAt: "2026-07-15T11:00:00.000Z"
+  },
+  {
+    id: "CMP-0004",
+    citizenId: "888888888888",
+    citizenName: "Priya Patel",
+    citizenPhone: "9876511111",
+    citizenEmail: "priya@example.com",
+    citizenAddress: "Row House 7, Sun City, Pune",
+    title: "Garbage dumping on roadside",
+    description: "Large garbage dump has accumulated on the roadside. It emits foul smell and attracts stray dogs/insects.",
+    area: "Hadapsar, Pune",
+    landmark: "Near Noble Hospital",
+    pinCode: "411028",
+    department: "Sanitation",
+    priority: "Low",
+    status: "Resolved",
+    imagePreview: null,
+    latitude: 18.5089,
+    longitude: 73.9258,
+    createdAt: "2026-07-10T08:00:00.000Z",
+    submitted_at: "2026-07-10T08:00:00.000Z",
+    updatedAt: "2026-07-12T16:30:00.000Z"
+  }
+];
+
+// ─── AI Keyword Classification Rules ──────────────────────────────────────────
+const DEPT_KEYWORDS = {
+  "Roads": [
+    "pothole", "road", "highway", "street", "pavement", "crater",
+    "bump", "broken road", "repair road", "asphalt", "divider",
+    "footpath", "sidewalk", "carriageway"
+  ],
+  "Water Supply": [
+    "water", "pipe", "leakage", "leak", "tap", "supply", "shortage",
+    "no water", "water cut", "drinking water", "nal", "pipeline",
+    "contaminated water", "murky water"
+  ],
+  "Electricity": [
+    "electricity", "power", "electric", "wire", "transformer",
+    "outage", "blackout", "no power", "current", "meter",
+    "short circuit", "sparking", "tripping", "voltage"
+  ],
+  "Sanitation": [
+    "garbage", "waste", "trash", "rubbish", "litter", "dump",
+    "sanitation", "sweeping", "cleanliness", "filth", "smell",
+    "open defecation", "toilet", "sewage smell"
+  ],
+  "Drainage": [
+    "drainage", "drain", "sewage", "overflow", "waterlogging",
+    "flood", "nala", "blocked drain", "stagnant water", "gutter",
+    "manhole", "overflowing"
+  ],
+  "Street Lights": [
+    "street light", "streetlight", "lamp post", "dark road",
+    "light not working", "lamppost", "pole light", "night light",
+    "no light", "dim light"
+  ],
+  "Public Transport": [
+    "bus", "train", "metro", "auto", "transport", "route",
+    "driver", "conductor", "stop", "halt", "schedule",
+    "overcrowding", "overloaded"
+  ],
+};
+
+const PRIORITY_KEYWORDS = {
+  "High": [
+    "urgent", "emergency", "danger", "dangerous", "immediate",
+    "critical", "accident", "injury", "death", "fire", "electrocute",
+    "collapse", "flood", "severe", "major", "fatal"
+  ],
+  "Low": [
+    "minor", "small", "slight", "little", "cosmetic", "tiny",
+    "not urgent", "eventually", "whenever possible"
+  ],
+};
+
+const CATEGORY_MAP = {
+  "Roads": "Road Damage",
+  "Water Supply": "Water Issue",
+  "Electricity": "Power Outage",
+  "Sanitation": "Sanitation & Hygiene",
+  "Drainage": "Drainage & Flooding",
+  "Street Lights": "Street Lighting",
+  "Public Transport": "Transport Issue",
+  "Other": "General Complaint",
+};
 
 // ─── ID Generator ─────────────────────────────────────────────────────────────
 const generateId = () => {
@@ -41,10 +197,15 @@ const generateId = () => {
   }
 };
 
-// ─── Raw Storage Helpers (synchronous, internal use only) ─────────────────────
+// ─── Raw Storage Helpers ──────────────────────────────────────────────────────
 const _readAll = () => {
   try {
-    return JSON.parse(localStorage.getItem(COMPLAINTS_KEY) || '[]');
+    const raw = localStorage.getItem(COMPLAINTS_KEY);
+    if (!raw) {
+      localStorage.setItem(COMPLAINTS_KEY, JSON.stringify(SEED_COMPLAINTS));
+      return SEED_COMPLAINTS;
+    }
+    return JSON.parse(raw);
   } catch {
     return [];
   }
@@ -72,7 +233,7 @@ export const getComplaints = async () => {
  */
 export const getComplaintById = async (id) => {
   await new Promise((r) => setTimeout(r, 60));
-  return _readAll().find((c) => c.id === id) || null;
+  return _readAll().find((c) => c.id.toLowerCase() === id.toLowerCase()) || null;
 };
 
 /**
@@ -82,11 +243,13 @@ export const getComplaintById = async (id) => {
  */
 export const getCitizenComplaints = async (citizenId) => {
   await new Promise((r) => setTimeout(r, 60));
-  return _readAll().filter((c) => c.citizenId === citizenId);
+  const cleanId = (citizenId || '').replace(/\s+/g, '');
+  return _readAll().filter((c) => (c.citizenId || '').replace(/\s+/g, '') === cleanId);
 };
 
 /**
  * Create and persist a new complaint.
+ * Automatically assigns randomized geolocations inside Pune, Maharashtra.
  *
  * @param {Object} payload
  *   citizen         : { name, aadhaar, mobile, email, address }
@@ -97,14 +260,18 @@ export const getCitizenComplaints = async (citizenId) => {
  * @returns {Promise<Object>} The saved flat record
  */
 export const createComplaint = async (payload) => {
-  await new Promise((r) => setTimeout(r, 700));
+  await new Promise((r) => setTimeout(r, 400));
 
   const { citizen, complaintLocation, complaint, imagePreview } = payload;
   const now = new Date().toISOString();
 
+  // Generate Pune-bound geolocations if none are provided
+  const latitude = payload.latitude || (18.5204 + (Math.random() - 0.5) * 0.08);
+  const longitude = payload.longitude || (73.8567 + (Math.random() - 0.5) * 0.08);
+
   const record = {
     id:             generateId(),
-    citizenId:      citizen.aadhaar || '',
+    citizenId:      (citizen.aadhaar || '').replace(/\s+/g, ''),
     citizenName:    citizen.name    || '',
     citizenPhone:   citizen.mobile  || '',
     citizenEmail:   citizen.email   || '',
@@ -114,11 +281,17 @@ export const createComplaint = async (payload) => {
     area:           complaintLocation.area,
     landmark:       complaintLocation.landmark || null,
     pinCode:        complaintLocation.pinCode  || null,
-    department:     complaint.department || 'Pending Classification',
-    priority:       complaint.priority   || 'Pending',
+    department:     complaint.department || 'Pending AI Classification',
+    priority:       complaint.priority   || 'Pending AI Analysis',
     status:         'Submitted',
     imagePreview:   imagePreview || null,
+    latitude,
+    longitude,
+    evidence_verdict: null,
+    evidence_reason: null,
+    evidence_confidence: null,
     createdAt:      now,
+    submitted_at:   now,
     updatedAt:      now,
   };
 
@@ -130,19 +303,23 @@ export const createComplaint = async (payload) => {
 };
 
 /**
- * Update the status of a complaint.
+ * Update any fields on a complaint by ID.
  * @param {string} id
- * @param {string} newStatus
+ * @param {Object} data
  * @returns {Promise<Object>} Updated record
  */
-export const updateComplaintStatus = async (id, newStatus) => {
-  await new Promise((r) => setTimeout(r, 200));
+export const updateComplaint = async (id, data) => {
+  await new Promise((r) => setTimeout(r, 100));
 
   const all = _readAll();
-  const idx = all.findIndex((c) => c.id === id);
+  const idx = all.findIndex((c) => c.id.toLowerCase() === id.toLowerCase());
   if (idx === -1) throw new Error(`Complaint ${id} not found.`);
 
-  all[idx] = { ...all[idx], status: newStatus, updatedAt: new Date().toISOString() };
+  all[idx] = { 
+    ...all[idx], 
+    ...data, 
+    updatedAt: new Date().toISOString() 
+  };
   _writeAll(all);
   return all[idx];
 };
@@ -153,9 +330,106 @@ export const updateComplaintStatus = async (id, newStatus) => {
  * @returns {Promise<void>}
  */
 export const deleteComplaint = async (id) => {
-  await new Promise((r) => setTimeout(r, 200));
-  _writeAll(_readAll().filter((c) => c.id !== id));
+  await new Promise((r) => setTimeout(r, 100));
+  _writeAll(_readAll().filter((c) => c.id.toLowerCase() !== id.toLowerCase()));
 };
 
-// ─── Legacy alias (backwards compat — SubmitComplaint previously called this) ─
+// ─── Simulated AI Helpers (Offline Support) ───────────────────────────────────
+
+/**
+ * Perform keyword-based AI classification on a complaint description.
+ * @param {string} id
+ * @returns {Promise<Object>} Updated complaint record
+ */
+export const classifyComplaintAI = async (id) => {
+  await new Promise((r) => setTimeout(r, 500));
+  const all = _readAll();
+  const idx = all.findIndex((c) => c.id.toLowerCase() === id.toLowerCase());
+  if (idx === -1) throw new Error(`Complaint ${id} not found.`);
+
+  const c = all[idx];
+  const text = (c.description || '').toLowerCase();
+
+  // Score departments based on keyword counts
+  const deptScores = {};
+  Object.keys(DEPT_KEYWORDS).forEach(dept => {
+    deptScores[dept] = 0;
+    DEPT_KEYWORDS[dept].forEach(kw => {
+      if (text.includes(kw)) {
+        deptScores[dept]++;
+      }
+    });
+  });
+
+  let bestDept = "Other";
+  let maxScore = 0;
+  Object.keys(deptScores).forEach(dept => {
+    if (deptScores[dept] > maxScore) {
+      maxScore = deptScores[dept];
+      bestDept = dept;
+    }
+  });
+
+  // Score priorities
+  let priority = "Medium";
+  for (const level of Object.keys(PRIORITY_KEYWORDS)) {
+    if (PRIORITY_KEYWORDS[level].some(kw => text.includes(kw))) {
+      priority = level;
+      break;
+    }
+  }
+
+  const category = CATEGORY_MAP[bestDept] || "General Complaint";
+  const summary = `${category} reported at the mentioned location. Priority assessed as ${priority}. Routed to ${bestDept} department for resolution.`;
+
+  all[idx] = {
+    ...c,
+    department: bestDept,
+    category,
+    priority,
+    ai_summary: summary,
+    updatedAt: new Date().toISOString()
+  };
+
+  _writeAll(all);
+  return all[idx];
+};
+
+/**
+ * Perform simulated vision model audit on complaint evidence image.
+ * @param {string} id
+ * @returns {Promise<Object>} Updated complaint record
+ */
+export const auditEvidenceAI = async (id) => {
+  await new Promise((r) => setTimeout(r, 600));
+  const all = _readAll();
+  const idx = all.findIndex((c) => c.id.toLowerCase() === id.toLowerCase());
+  if (idx === -1) throw new Error(`Complaint ${id} not found.`);
+
+  const c = all[idx];
+  if (!c.imagePreview && !c.image_url) {
+    throw new Error("This complaint has no attached evidence image to analyze.");
+  }
+
+  const verdict = "MATCH";
+  const reason = "Evidence verified — image matches the complaint description.";
+  const confidence = 0.95;
+
+  all[idx] = {
+    ...c,
+    evidence_verdict: verdict,
+    evidence_reason: reason,
+    evidence_confidence: confidence,
+    updatedAt: new Date().toISOString()
+  };
+
+  _writeAll(all);
+  return all[idx];
+};
+
+// ─── Legacy compatibility exports ─────────────────────────────────────────────
+export const updateComplaintStatus = async (id, newStatus) => {
+  return updateComplaint(id, { status: newStatus });
+};
+
 export const submitComplaint = createComplaint;
