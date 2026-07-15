@@ -2,18 +2,9 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import SubmitComplaint from './pages/SubmitComplaint';
+import TrackComplaint from './pages/TrackComplaint';
 
 // Temporary placeholder screens for future milestones to support routing links
-function TrackPlaceholder() {
-  return (
-    <div className="glass-panel p-8 rounded-3xl text-center max-w-md mx-auto relative border border-white/5 shadow-xl">
-      <h2 className="text-xl font-bold text-white mb-2">Complaint Status Tracking</h2>
-      <p className="text-slate-400 text-xs md:text-sm">
-        Track complaint status by ID or Phone number. This system connects to models in Milestone 5.
-      </p>
-    </div>
-  );
-}
 
 function AdminPlaceholder() {
   return (
@@ -51,7 +42,7 @@ function App() {
         <main className="flex-grow flex items-center justify-center py-6 z-10">
           <Routes>
             <Route path="/" element={<SubmitComplaint />} />
-            <Route path="/track" element={<TrackPlaceholder />} />
+            <Route path="/track" element={<TrackComplaint />} />
             <Route path="/admin" element={<AdminPlaceholder />} />
             <Route path="/analytics" element={<AnalyticsPlaceholder />} />
           </Routes>
