@@ -1,434 +1,545 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { MapPin, Image as ImageIcon, CheckCircle, Copy, Navigation, Trash2, ArrowRight } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  User, Phone, Mail, Home, CreditCard,
+  MapPin, Landmark, Hash,
+  FileText, AlignLeft,
+  CheckCircle, Copy, Trash2,
+  AlertCircle, Loader2, ShieldCheck,
+  Bot, Sparkles, Navigation, ImagePlus
+} from 'lucide-react';
+import { getCitizenProfile } from '../services/citizenService';
+import { submitComplaint } from '../services/complaintService';
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+const MAX_IMAGES = 5;
+const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+const ACCEPTED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+
+/**
+ * AI Classification Service hook-point.
+ * Replace body with: POST /ai/classify-complaint
+ * Expected response: { department, priority, confidence, reason }
+ */
+const aiClassifyComplaint = async ({ title, description, location, images }) => {
+  // Simulated pending state — real AI endpoint replaces this
+  return {
+    department: 'Pending AI Classification',
+    priority:   'Pending AI Analysis',
+    confidence: null,
+    reason:     null
+  };
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const maskAadhaar = (num = '') =>
+  num.length >= 4 ? `XXXX XXXX ${num.slice(-4)}` : num;
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+const ReadField = ({ icon: Icon, label, value, mono = false }) => (
+  <div className="flex flex-col gap-1">
+    <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-500">{label}</span>
+    <div className="flex items-center gap-2 bg-slate-950/60 border border-white/5 rounded-xl px-3.5 py-2.5">
+      <Icon className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+      <span className={`text-xs text-slate-300 font-medium ${mono ? 'font-mono' : ''}`}>
+        {value || <span className="text-slate-600 italic">Not provided</span>}
+      </span>
+    </div>
+  </div>
+);
+
+const FieldError = ({ message }) =>
+  message ? (
+    <p className="text-[10px] text-rose-400 font-semibold flex items-center gap-1 mt-1">
+      <AlertCircle className="w-3 h-3 shrink-0" /> {message}
+    </p>
+  ) : null;
+
+const SectionHeading = ({ step, title, subtitle }) => (
+  <div className="flex items-start gap-3 border-b border-white/5 pb-4 mb-5">
+    <div className="w-7 h-7 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400 text-[11px] font-black flex items-center justify-center shrink-0 mt-0.5">
+      {step}
+    </div>
+    <div>
+      <h2 className="text-sm font-bold text-white">{title}</h2>
+      {subtitle && <p className="text-[11px] text-slate-400 mt-0.5">{subtitle}</p>}
+    </div>
+  </div>
+);
+
+// ─── Main Component ────────────────────────────────────────────────────────
 function SubmitComplaint() {
-  const [formData, setFormData] = useState({
-    citizen_name: '',
-    citizen_phone: '',
-    description: '',
-    address: '',
-    latitude: '',
-    longitude: ''
-  });
-  
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
-  
-  const [locating, setLocating] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [successData, setSuccessData] = useState(null);
+  // ── Citizen profile ──────────────────────────────────────────────────────
+  const [citizen, setCitizen] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState('');
+
+  // ── Location fields ──────────────────────────────────────────────────────
+  const [area, setArea] = useState('');
+  const [landmark, setLandmark] = useState('');
+  const [pinCode, setPinCode] = useState('');
+
+  // ── Complaint fields (category & priority REMOVED — AI handles them) ─────
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+
+  // ── Images (mandatory, up to 5) ──────────────────────────────────────────
+  const [images, setImages] = useState([]); // [{ file, preview, id }]
+  const fileInputRef = useRef(null);
+  const dropZoneRef = useRef(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  // ── State ────────────────────────────────────────────────────────────────
+  const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [successRecord, setSuccessRecord] = useState(null);
   const [copied, setCopied] = useState(false);
-  const [errorMsg, setErrorMsg] = useState(null);
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
+  // ── Load profile ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    getCitizenProfile()
+      .then(setCitizen)
+      .catch((e) => setProfileError(e.message))
+      .finally(() => setProfileLoading(false));
+  }, []);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file));
+  // ── Cleanup preview URLs on unmount ──────────────────────────────────────
+  useEffect(() => {
+    return () => images.forEach((img) => URL.revokeObjectURL(img.preview));
+  }, []);
+
+  // ── Image helpers ─────────────────────────────────────────────────────────
+  const addFiles = (fileList) => {
+    const incoming = Array.from(fileList);
+    const slots = MAX_IMAGES - images.length;
+    if (slots <= 0) return;
+
+    const toAdd = [];
+    for (const file of incoming.slice(0, slots)) {
+      if (!ACCEPTED_TYPES.includes(file.type)) continue;
+      if (file.size > MAX_FILE_BYTES) continue;
+      toAdd.push({ file, preview: URL.createObjectURL(file), id: crypto.randomUUID() });
     }
+    setImages((prev) => [...prev, ...toAdd]);
+    setErrors((prev) => ({ ...prev, images: undefined }));
   };
 
-  const removeImage = () => {
-    setImageFile(null);
-    setImagePreview(null);
+  const removeImage = (id) => {
+    setImages((prev) => {
+      const removed = prev.find((i) => i.id === id);
+      if (removed) URL.revokeObjectURL(removed.preview);
+      return prev.filter((i) => i.id !== id);
+    });
   };
 
-  // Geo Location Query with IP-based fallback
-  const fetchLocation = () => {
-    setLocating(true);
-    setErrorMsg(null);
-
-    if (!navigator.geolocation) {
-      fallbackToIpGeo();
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setFormData((prev) => ({
-          ...prev,
-          latitude: position.coords.latitude.toFixed(6),
-          longitude: position.coords.longitude.toFixed(6),
-          address: prev.address || 'Detected Location'
-        }));
-        setLocating(false);
-      },
-      (error) => {
-        console.warn("HTML5 Geolocation failed/timed out, trying IP-based fallback:", error);
-        fallbackToIpGeo();
-      },
-      { enableHighAccuracy: false, timeout: 4000 }
-    );
-  };
-
-  const fallbackToIpGeo = async () => {
-    try {
-      const response = await axios.get('https://ipapi.co/json/');
-      if (response.data && response.data.latitude && response.data.longitude) {
-        setFormData((prev) => ({
-          ...prev,
-          latitude: parseFloat(response.data.latitude).toFixed(6),
-          longitude: parseFloat(response.data.longitude).toFixed(6),
-          address: prev.address || `${response.data.city || 'Detected Area'}, ${response.data.region || ''}`
-        }));
-      } else {
-        throw new Error("Invalid IP payload response");
-      }
-    } catch (err) {
-      console.error("IP Geolocation fallback failed:", err);
-      setErrorMsg("Live GPS unavailable. Please enter coordinates manually (e.g. 28.6139, 77.2090).");
-    } finally {
-      setLocating(false);
-    }
-  };
-
-  const handleFormSubmit = async (e) => {
+  // ── Drag & Drop ───────────────────────────────────────────────────────────
+  const onDragOver  = (e) => { e.preventDefault(); setDragOver(true);  };
+  const onDragLeave = ()  => setDragOver(false);
+  const onDrop      = (e) => {
     e.preventDefault();
-    if (!formData.description.trim()) {
-      setErrorMsg("Please describe your grievance in detail.");
+    setDragOver(false);
+    addFiles(e.dataTransfer.files);
+  };
+
+  // ── Validation ────────────────────────────────────────────────────────────
+  const validate = () => {
+    const e = {};
+    if (!area.trim())              e.area        = 'Area / Locality is required.';
+    if (area.length > 200)         e.area        = 'Area must not exceed 200 characters.';
+    if (!title.trim())             e.title       = 'Complaint title is required.';
+    if (!description.trim())       e.description = 'Please describe the issue.';
+    if (description.length > 1000) e.description = 'Description must not exceed 1000 characters.';
+    if (pinCode && !/^\d{6}$/.test(pinCode)) e.pinCode = 'Pin code must be exactly 6 digits.';
+    if (images.length === 0)       e.images      = 'Please upload at least one image of the issue.';
+    return e;
+  };
+
+  // ── Submit ────────────────────────────────────────────────────────────────
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setErrors({});
+
+    const validationErrors = validate();
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
       return;
     }
-    
-    setLoading(true);
-    setErrorMsg(null);
 
-    const payload = new FormData();
-    payload.append("citizen_name", formData.citizen_name);
-    payload.append("citizen_phone", formData.citizen_phone);
-    payload.append("description", formData.description);
-    payload.append("address", formData.address);
-    if (formData.latitude) payload.append("latitude", formData.latitude);
-    if (formData.longitude) payload.append("longitude", formData.longitude);
-    if (imageFile) {
-      payload.append("image", imageFile);
-    }
-
+    setSubmitting(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-      const response = await axios.post(`${apiUrl}/complaints/submit`, payload, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+      // Call AI classification hook-point
+      const aiResult = await aiClassifyComplaint({
+        title:       title.trim(),
+        description: description.trim(),
+        location:    area.trim(),
+        images:      images.map((i) => i.file.name)
       });
-      setSuccessData(response.data);
-      // Reset form variables
-      setFormData({
-        citizen_name: '',
-        citizen_phone: '',
-        description: '',
-        address: '',
-        latitude: '',
-        longitude: ''
-      });
-      setImageFile(null);
-      setImagePreview(null);
+
+      const payload = {
+        citizen: {
+          name:    citizen.name,
+          aadhaar: citizen.aadhaar,
+          mobile:  citizen.mobile,
+          address: citizen.address,
+          email:   citizen.email
+        },
+        complaintLocation: {
+          area:     area.trim(),
+          landmark: landmark.trim() || null,
+          pinCode:  pinCode.trim()  || null
+        },
+        complaint: {
+          title:       title.trim(),
+          description: description.trim(),
+          department:  aiResult.department,
+          priority:    aiResult.priority
+        }
+      };
+
+      const record = await submitComplaint(payload);
+      setSuccessRecord(record);
+
+      // Reset
+      setArea(''); setLandmark(''); setPinCode('');
+      setTitle(''); setDescription('');
+      images.forEach((i) => URL.revokeObjectURL(i.preview));
+      setImages([]);
     } catch (err) {
-      console.error(err);
-      setErrorMsg(err.response?.data?.detail || "An error occurred while submitting your complaint.");
+      setErrors({ submit: err.message || 'Submission failed. Please try again.' });
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const copyToClipboard = () => {
-    if (successData?.id) {
-      navigator.clipboard.writeText(successData.id.toString());
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+  const copyId = () => {
+    navigator.clipboard.writeText(successRecord.complaintId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  return (
-    <div className="max-w-2xl mx-auto w-full px-4 pb-12">
-      
-      {/* Success Modal Panel */}
-      {successData ? (
-        <div className="glass-panel p-8 rounded-3xl shadow-2xl text-center space-y-6 relative overflow-hidden animate-fade-in border-sky-500/20">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-sky-550 to-indigo-650" />
-          <div className="w-16 h-16 bg-emerald-500/10 text-emerald-400 border border-emerald-555/25 rounded-full flex items-center justify-center mx-auto">
-            <CheckCircle className="w-8 h-8" />
+  // ── Success Screen ────────────────────────────────────────────────────────
+  if (successRecord) {
+    return (
+      <div className="max-w-lg mx-auto w-full px-4 text-center animate-fade-in">
+        <div className="glass-panel p-10 rounded-3xl border border-white/5 space-y-6">
+          <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mx-auto border border-emerald-500/20">
+            <CheckCircle className="w-8 h-8 text-emerald-400" />
           </div>
-          
-          <div className="space-y-2">
-            <h2 className="text-2xl font-black text-white">Grievance Submitted</h2>
-            <p className="text-slate-400 text-sm">
-              Your complaint has been successfully recorded and queued for AI classification.
+          <div>
+            <h2 className="text-xl font-black text-white">Complaint Registered!</h2>
+            <p className="text-slate-400 text-xs mt-1.5 leading-relaxed">
+              Your grievance has been recorded. Our AI will classify and route it to the correct department shortly.
+            </p>
+          </div>
+          <div className="bg-slate-950/60 border border-white/5 rounded-2xl px-6 py-4 space-y-1">
+            <p className="text-[10px] text-slate-500 uppercase font-extrabold tracking-widest">Complaint ID</p>
+            <p className="text-2xl font-black font-mono text-sky-400">{successRecord.complaintId}</p>
+            <button
+              onClick={copyId}
+              className="mt-1 inline-flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-white transition-colors cursor-pointer"
+            >
+              <Copy className="w-3 h-3" />
+              {copied ? 'Copied!' : 'Copy ID'}
+            </button>
+          </div>
+          <div className="text-left bg-slate-900/40 border border-white/5 rounded-2xl p-4 text-xs space-y-2.5">
+            {[
+              ['Title',      successRecord.complaint.title],
+              ['Area',       successRecord.complaintLocation.area],
+              ['AI Routing', successRecord.complaint.department],
+              ['Priority',   successRecord.complaint.priority],
+              ['Status',     successRecord.status]
+            ].map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-2">
+                <span className="text-slate-500 shrink-0">{k}</span>
+                <span className="text-slate-200 font-semibold text-right">{v}</span>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => setSuccessRecord(null)}
+            className="w-full py-2.5 bg-sky-600/15 hover:bg-sky-600/25 text-sky-400 border border-sky-500/20 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+          >
+            Lodge Another Complaint
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main Form ─────────────────────────────────────────────────────────────
+  return (
+    <div className="max-w-2xl mx-auto w-full px-4 pb-12 space-y-5 animate-fade-in">
+
+      {/* Page Header */}
+      <div className="relative glass-panel px-6 py-5 rounded-3xl border border-white/5 overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-sky-500 to-indigo-600" />
+        <h1 className="text-lg font-black text-white">Lodge a Grievance</h1>
+        <p className="text-xs text-slate-400 mt-1">
+          AI will automatically classify and route your complaint to the correct government department.
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+
+        {/* ══════════════════════════════════════════════════════
+            CARD 1 — CITIZEN DETAILS (Auto-filled / Read-only)
+        ══════════════════════════════════════════════════════ */}
+        <div className="glass-panel p-6 rounded-3xl border border-white/5 space-y-4">
+          <SectionHeading
+            step="1"
+            title="Citizen Details"
+            subtitle="Verified from your Aadhaar session — these fields cannot be edited."
+          />
+          {profileLoading ? (
+            <div className="flex items-center gap-2 text-slate-400 text-xs py-4">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Fetching your verified profile…</span>
+            </div>
+          ) : profileError ? (
+            <div className="flex items-center gap-2 p-3 bg-rose-500/5 border border-rose-500/15 rounded-xl text-rose-400 text-xs">
+              <AlertCircle className="w-4 h-4 shrink-0" /><span>{profileError}</span>
+            </div>
+          ) : citizen && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <ReadField icon={User}       label="Full Name"           value={citizen.name} />
+                <ReadField icon={CreditCard} label="Aadhaar Number"      value={maskAadhaar(citizen.aadhaar)} mono />
+                <ReadField icon={Phone}      label="Registered Mobile"   value={`+91 ${citizen.mobile}`} mono />
+                <ReadField icon={Mail}       label="Email Address"       value={citizen.email} />
+              </div>
+              <ReadField   icon={Home}       label="Residential Address" value={citizen.address} />
+              <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-bold bg-emerald-500/5 border border-emerald-500/10 rounded-xl px-3 py-2">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Identity verified via Aadhaar E-KYC
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ══════════════════════════════════════════════════════
+            CARD 2 — COMPLAINT LOCATION
+        ══════════════════════════════════════════════════════ */}
+        <div className="glass-panel p-6 rounded-3xl border border-white/5 space-y-4">
+          <SectionHeading
+            step="2"
+            title="Complaint Location"
+            subtitle="Specify where the issue exists — may differ from your home address."
+          />
+
+          {/* Area — required */}
+          <div>
+            <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-1.5">
+              Area / Locality <span className="text-rose-400">*</span>
+            </label>
+            <div className="relative">
+              <MapPin className="absolute left-3.5 top-3.5 w-3.5 h-3.5 text-slate-500" />
+              <textarea
+                value={area}
+                onChange={(e) => setArea(e.target.value)}
+                maxLength={200}
+                rows={3}
+                placeholder="e.g. Near Shivaji Nagar Bus Stand, Pune"
+                className={`w-full bg-slate-900/60 border rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none resize-none transition-colors ${errors.area ? 'border-rose-500/50' : 'border-slate-800 focus:border-sky-500'}`}
+              />
+            </div>
+            <div className="flex justify-between items-start mt-1">
+              <FieldError message={errors.area} />
+              <span className={`text-[9px] ml-auto ${area.length > 180 ? 'text-amber-400' : 'text-slate-600'}`}>
+                {area.length}/200
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1">
+              Enter the exact area, locality, landmark, or road where the issue is located.
             </p>
           </div>
 
-          {/* Reference ID Card section */}
-          <div className="bg-slate-900/80 p-5 rounded-2xl border border-white/5 inline-flex flex-col items-center justify-center gap-1.5 w-full max-w-sm">
-            <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest">
-              Complaint Reference ID
-            </span>
-            <div className="flex items-center gap-3">
-              <span className="text-2xl font-mono font-bold text-sky-400">#{successData.id}</span>
-              <button 
-                onClick={copyToClipboard}
-                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white rounded-lg transition-colors border border-white/5 cursor-pointer"
-                title="Copy ID to Clipboard"
-              >
-                {copied ? <span className="text-xs text-emerald-400 font-semibold px-0.5">Copied!</span> : <Copy className="w-4 h-4" />}
-              </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-1.5">
+                Landmark <span className="text-slate-600">(Optional)</span>
+              </label>
+              <div className="relative">
+                <Landmark className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                <input
+                  type="text"
+                  value={landmark}
+                  onChange={(e) => setLandmark(e.target.value)}
+                  placeholder="e.g. Opposite D-Mart"
+                  className="w-full bg-slate-900/60 border border-slate-800 focus:border-sky-500 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none transition-colors"
+                />
+              </div>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
-            <div className="text-xs bg-slate-900/50 p-4 rounded-xl border border-white/5 text-slate-400 space-y-1.5">
-              <h3 className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-2">Submission Details</h3>
-              <p><strong>Citizen:</strong> {successData.citizen_name || 'Anonymous'}</p>
-              <p><strong>Phone:</strong> {successData.citizen_phone || 'Not Provided'}</p>
-              <p><strong>Status:</strong> <span className="text-emerald-400 font-semibold">{successData.status}</span></p>
-              <p className="truncate" title={successData.address || 'Coordinates Only'}>
-                <strong>Location:</strong> {successData.address || `${successData.latitude || '0'}, ${successData.longitude || '0'}`}
-              </p>
+            <div>
+              <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-1.5">
+                Pin Code <span className="text-slate-600">(Optional)</span>
+              </label>
+              <div className="relative">
+                <Hash className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                <input
+                  type="text"
+                  value={pinCode}
+                  onChange={(e) => setPinCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="411001"
+                  maxLength={6}
+                  className={`w-full bg-slate-900/60 border rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none transition-colors font-mono ${errors.pinCode ? 'border-rose-500/50' : 'border-slate-800 focus:border-sky-500'}`}
+                />
+              </div>
+              <FieldError message={errors.pinCode} />
             </div>
-
-            <div className="text-xs bg-slate-900/50 p-4 rounded-xl border border-white/5 text-slate-400 space-y-1.5">
-              <h3 className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-2">AI Classification</h3>
-              <p><strong>Department:</strong> <span className="text-sky-400 font-semibold">{successData.department}</span></p>
-              <p><strong>Category:</strong> <span className="text-slate-200 font-semibold">{successData.category}</span></p>
-              <p className="flex items-center gap-1.5">
-                <strong>Priority:</strong>
-                <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
-                  successData.priority === 'High' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
-                  successData.priority === 'Medium' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                  'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                }`}>
-                  {successData.priority}
-                </span>
-              </p>
-              <p className="flex items-center gap-1">
-                <strong>Routing:</strong>
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded-md border border-sky-500/15">
-                  <span className="w-1 h-1 rounded-full bg-sky-400 animate-pulse" />
-                  Auto-Routed
-                </span>
-              </p>
-            </div>
-          </div>
-
-          {successData.ai_summary && (
-            <div className="text-left text-xs bg-slate-900/30 p-4 rounded-xl border border-white/5 text-slate-400">
-              <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block mb-1">AI Generated Summary</span>
-              <p className="text-slate-350 italic">"{successData.ai_summary}"</p>
-            </div>
-          )}
-
-          <div className="flex items-center justify-center gap-4">
-            <button 
-              onClick={() => setSuccessData(null)}
-              className="px-5 py-2.5 bg-slate-900 border border-slate-805 hover:bg-slate-800 rounded-xl text-slate-300 hover:text-white text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer"
-            >
-              Submit Another
-            </button>
-            
-            <a 
-              href={`/track?id=${successData.id}`}
-              className="flex items-center gap-2 px-5 py-2.5 bg-sky-600 hover:bg-sky-500 hover:shadow-lg hover:shadow-sky-600/10 rounded-xl text-white text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer"
-            >
-              Track Progress
-              <ArrowRight className="w-3.5 h-3.5" />
-            </a>
           </div>
         </div>
-      ) : (
 
-        /* Grievance Submission Form Panel */
-        <div className="glass-panel p-8 rounded-3xl shadow-xl relative">
-          <div className="mb-6">
-            <h2 className="text-xl md:text-2xl font-bold text-white mb-1.5">Submit Grievance</h2>
-            <p className="text-slate-400 text-xs md:text-sm">
-              Briefly fill the details of public issues. The system runs real-time AI to direct ticket routing and check validations.
-            </p>
-          </div>
+        {/* ══════════════════════════════════════════════════════
+            CARD 3 — COMPLAINT DETAILS
+        ══════════════════════════════════════════════════════ */}
+        <div className="glass-panel p-6 rounded-3xl border border-white/5 space-y-5">
+          <SectionHeading
+            step="3"
+            title="Complaint Details"
+            subtitle="Describe the issue clearly — AI will classify and route it automatically."
+          />
 
-          {errorMsg && (
-            <div className="mb-5 p-3.5 rounded-xl border border-rose-500/10 bg-rose-500/5 text-rose-400 text-xs font-medium">
-              {errorMsg}
+          {/* Submit error */}
+          {errors.submit && (
+            <div className="flex items-center gap-2 p-3 bg-rose-500/5 border border-rose-500/15 rounded-xl text-rose-400 text-xs">
+              <AlertCircle className="w-4 h-4 shrink-0" /><span>{errors.submit}</span>
             </div>
           )}
 
-          <form onSubmit={handleFormSubmit} className="space-y-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Name (Optional)
-                </label>
-                <input
-                  type="text"
-                  name="citizen_name"
-                  value={formData.citizen_name}
-                  onChange={handleInputChange}
-                  placeholder="Rohan Sharma"
-                  className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-sky-500 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Phone (Optional)
-                </label>
-                <input
-                  type="text"
-                  name="citizen_phone"
-                  value={formData.citizen_phone}
-                  onChange={handleInputChange}
-                  placeholder="9876543210"
-                  className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-105 placeholder-slate-600 focus:outline-none focus:border-sky-500 transition-colors"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Physical Address / Landmark
-              </label>
+          {/* Title */}
+          <div>
+            <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-1.5">
+              Complaint Title <span className="text-rose-400">*</span>
+            </label>
+            <div className="relative">
+              <FileText className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
               <input
                 type="text"
-                name="address"
-                value={formData.address}
-                onChange={handleInputChange}
-                placeholder="Sector 15 Main Crossing, opposite metro gate"
-                className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-650 focus:outline-none focus:border-sky-500 transition-colors"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Water pipeline leaking on Main Road"
+                className={`w-full bg-slate-900/60 border rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none transition-colors ${errors.title ? 'border-rose-500/50' : 'border-slate-800 focus:border-sky-500'}`}
               />
             </div>
+            <FieldError message={errors.title} />
+          </div>
 
-            {/* Coordinates widget */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  GPS Coordinates
-                </span>
-                <button
-                  type="button"
-                  onClick={fetchLocation}
-                  disabled={locating}
-                  className="flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  <Navigation className={`w-3.5 h-3.5 ${locating ? 'animate-spin' : ''}`} />
-                  {locating ? 'Locating...' : 'Fetch Live GPS'}
-                </button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input
-                  type="text"
-                  name="latitude"
-                  value={formData.latitude}
-                  onChange={handleInputChange}
-                  placeholder="Latitude (e.g. 28.5355)"
-                  className="w-full bg-slate-909/60 bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-sky-500 transition-colors"
-                />
-                <input
-                  type="text"
-                  name="longitude"
-                  value={formData.longitude}
-                  onChange={handleInputChange}
-                  placeholder="Longitude (e.g. 77.3910)"
-                  className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-105 placeholder-slate-600 focus:outline-none focus:border-sky-500 transition-colors"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Issue Description *
-              </label>
+          {/* Description */}
+          <div>
+            <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-1.5">
+              Complaint Description <span className="text-rose-400">*</span>
+            </label>
+            <div className="relative">
+              <AlignLeft className="absolute left-3.5 top-3.5 w-3.5 h-3.5 text-slate-500" />
               <textarea
-                name="description"
-                value={formData.description}
-                onChange={handleInputChange}
-                rows="4"
-                placeholder="Describe your issue here. Please specify details like leakage duration, road pit depth, light outage count, etc."
-                className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-sky-500 transition-colors resize-none"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                maxLength={1000}
+                rows={6}
+                placeholder="Describe the issue in detail. Include what happened, when it started, nearby landmarks, and any additional information that will help our AI understand the complaint."
+                className={`w-full bg-slate-900/60 border rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none resize-none transition-colors ${errors.description ? 'border-rose-500/50' : 'border-slate-800 focus:border-sky-500'}`}
               />
             </div>
-
-            {/* Photo upload container */}
-            <div>
-              <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-                Evidence Upload (Optional)
+            <div className="flex justify-between items-start mt-1">
+              <FieldError message={errors.description} />
+              <span className={`text-[9px] ml-auto ${description.length > 900 ? 'text-amber-400' : 'text-slate-600'}`}>
+                {description.length}/1000
               </span>
-              
-              {imagePreview ? (
-                <div className="relative border border-slate-800 bg-slate-900/40 p-3 rounded-2xl flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <img 
-                      src={imagePreview} 
-                      alt="Uploader preview" 
-                      className="w-16 h-16 object-cover rounded-xl border border-white/10" 
-                    />
-                    <div className="text-xs">
-                      <p className="font-semibold text-slate-200 truncate max-w-[200px]">
-                        {imageFile?.name}
-                      </p>
-                      <p className="text-slate-500">
-                        {(imageFile?.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={removeImage}
-                    className="p-2 text-rose-500 hover:text-rose-400 bg-slate-800/80 hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ) : (
-                <label className="border border-dashed border-slate-850 hover:border-slate-700 bg-slate-900/40 hover:bg-slate-900/60 transition-all rounded-2xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer relative group">
-                  <input 
-                    type="file" 
-                    accept="image/*"
-                    onChange={handleFileChange} 
-                    className="hidden" 
-                  />
-                  <ImageIcon className="w-8 h-8 text-slate-500 group-hover:text-sky-400 transition-colors" />
-                  <span className="text-xs text-sky-400 font-semibold">Upload issue image file</span>
-                  <span className="text-[10px] text-slate-500">JPEG, PNG up to 5MB</span>
-                </label>
-              )}
+            </div>
+          </div>
+
+          {/* Evidence Images — mandatory, up to 5 */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                Evidence Images <span className="text-rose-400">*</span>
+              </label>
+              <span className="text-[10px] text-slate-500 font-semibold">
+                {images.length}/{MAX_IMAGES} uploaded
+              </span>
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 disabled:opacity-50 text-white rounded-xl text-sm font-semibold tracking-wider uppercase transition-all duration-200 cursor-pointer shadow-lg shadow-sky-600/10 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-950"
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin" /> Submitting...
-                </span>
-              ) : 'Submit Grievance'}
-            </button>
-          </form>
-        </div>
-      )}
-    </div>
-  );
-}
+            {/* Previews grid */}
+            {images.length > 0 && (
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-3">
+                {images.map((img) => (
+                  <div key={img.id} className="relative group aspect-square rounded-xl overflow-hidden border border-white/5 bg-slate-900">
+                    <img src={img.preview} alt="Evidence" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(img.id)}
+                      className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4 text-rose-400" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
-// Inline fallback spinner to avoid circular import issues
-function RefreshCw(props) {
-  return (
-    <svg 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round" 
-      {...props}
-    >
-      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-      <path d="M3 3v5h5" />
-      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-      <path d="M16 16h5v5" />
-    </svg>
+            {/* Drop zone */}
+            {images.length < MAX_IMAGES && (
+              <div
+                ref={dropZoneRef}
+                onDragOver={onDragOver}
+                onDragLeave={onDragLeave}
+                onDrop={onDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`flex flex-col items-center justify-center gap-2.5 border-2 border-dashed rounded-2xl py-8 px-4 cursor-pointer transition-all ${
+                  errors.images
+                    ? 'border-rose-500/50 bg-rose-500/5'
+                    : dragOver
+                    ? 'border-sky-500/60 bg-sky-500/5'
+                    : 'border-slate-700 hover:border-sky-500/50 bg-slate-900/30 hover:bg-slate-900/50'
+                }`}
+              >
+                <div className={`p-3 rounded-xl transition-colors ${dragOver ? 'bg-sky-500/15' : 'bg-slate-800'}`}>
+                  <ImagePlus className={`w-5 h-5 ${dragOver ? 'text-sky-400' : 'text-slate-400'}`} />
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-slate-300 font-semibold">
+                    {dragOver ? 'Drop images here' : 'Drag & drop or click to upload'}
+                  </p>
+                  <p className="text-[10px] text-slate-600 mt-0.5">
+                    JPG, JPEG, PNG, WEBP — Max 10 MB each — Up to {MAX_IMAGES} images
+                  </p>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp"
+                  multiple
+                  onChange={(e) => addFiles(e.target.files)}
+                  className="hidden"
+                />
+              </div>
+            )}
+            <FieldError message={errors.images} />
+
+            {/* AI analysis notice */}
+            <div className="flex items-start gap-2 mt-3 p-3 bg-slate-900/50 border border-white/5 rounded-xl">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5" />
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                <span className="font-bold text-indigo-300">AI Analysis:</span> Your complaint description, location, and uploaded images will be analyzed to automatically identify the appropriate government department and prioritize the complaint for faster resolution.
+              </p>
+            </div>
+          </div>
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={submitting || profileLoading || !!profileError}
+            className="w-full py-3.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-lg shadow-sky-600/10 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-950 flex items-center justify-center gap-2"
+          >
+            {submitting ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Submitting & Routing via AI…</>
+            ) : (
+              <><Navigation className="w-4 h-4" /> Submit Grievance</>
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
