@@ -78,8 +78,8 @@ root/
 
 ## 5. Development Milestones
 
-- [ ] **Milestone 1**: Project Structure, FastAPI Setup, React Setup, MySQL connection (Current: In Progress)
-- [ ] **Milestone 2**: Database Schema, models, and CRUD endpoints code verification
+- [x] **Milestone 1**: Project Structure, FastAPI Setup, React Setup, MySQL connection
+- [x] **Milestone 2**: Database Schema, models, and CRUD endpoints code verification
 - [ ] **Milestone 3**: Complaint submission page UI and frontend connection
 - [ ] **Milestone 4**: Ollama backend classification service integration
 - [ ] **Milestone 5**: Step-by-step grievance tracking workspace interface

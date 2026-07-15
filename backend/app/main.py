@@ -3,7 +3,15 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
-from app.database.db import get_db
+from app.database.db import get_db, Base, engine
+from app.routes.complaint_routes import router as complaint_router
+
+# Autogenerate database tables defined in sqlalchemy models mapping on boot
+try:
+    Base.metadata.create_all(bind=engine)
+    print("Database tables synchronized successfully.")
+except Exception as err:
+    print(f"Error running database synchronization: {err}")
 
 app = FastAPI(
     title="AI-Powered Grievance Lodging & Tracking System API",
@@ -19,6 +27,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register routes group
+app.include_router(complaint_router, prefix="/api")
 
 @app.get("/")
 def read_root():
@@ -37,7 +48,6 @@ def health_check(db: Session = Depends(get_db)):
     db_ok = False
     error_msg = None
     try:
-        # Check active session
         db.execute(text("SELECT 1"))
         db_ok = True
     except Exception as e:
