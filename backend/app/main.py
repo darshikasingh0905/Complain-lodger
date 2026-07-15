@@ -1,6 +1,7 @@
 import os
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
 from app.database.db import get_db, Base, engine
@@ -27,6 +28,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Guarantee the local uploads structure exists and mount static routes
+UPLOAD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(UPLOAD_PATH, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_PATH), name="uploads")
 
 # Register routes group
 app.include_router(complaint_router, prefix="/api")
