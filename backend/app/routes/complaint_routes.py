@@ -18,6 +18,44 @@ router = APIRouter(
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 
+@router.get("/map-data")
+def get_map_data(db: Session = Depends(get_db)):
+    """
+    Returns a lean payload of all complaints that have GPS coordinates,
+    used by the frontend Leaflet heatmap to render pins and density layers.
+    Only returns fields required for map rendering — no large text bodies.
+    """
+    from app.models.complaint import Complaint
+    complaints = (
+        db.query(
+            Complaint.id,
+            Complaint.latitude,
+            Complaint.longitude,
+            Complaint.department,
+            Complaint.priority,
+            Complaint.status,
+            Complaint.description,
+            Complaint.address,
+            Complaint.category,
+        )
+        .filter(Complaint.latitude.isnot(None), Complaint.longitude.isnot(None))
+        .all()
+    )
+    return [
+        {
+            "id": c.id,
+            "latitude": c.latitude,
+            "longitude": c.longitude,
+            "department": c.department,
+            "priority": c.priority,
+            "status": c.status,
+            "description": c.description,
+            "address": c.address,
+            "category": c.category,
+        }
+        for c in complaints
+    ]
+
 @router.post("/submit", response_model=ComplaintResponse, status_code=status.HTTP_201_CREATED)
 def submit_complaint_form(
     citizen_name: Optional[str] = Form(None),

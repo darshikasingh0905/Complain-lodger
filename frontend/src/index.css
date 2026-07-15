@@ -33,3 +33,42 @@
   border-radius: 0.75rem;
   background-color: #0f172a !important;
 }
+
+/* Dark tooltip override */
+.leaflet-tooltip {
+  background: rgba(15, 23, 42, 0.92) !important;
+  border: 1px solid rgba(148, 163, 184, 0.15) !important;
+  color: #e2e8f0 !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 11px !important;
+  border-radius: 8px !important;
+  padding: 6px 10px !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+  backdrop-filter: blur(8px);
+}
+.leaflet-tooltip-top::before,
+.leaflet-tooltip-bottom::before,
+.leaflet-tooltip-left::before,
+.leaflet-tooltip-right::before {
+  border-top-color: rgba(148, 163, 184, 0.15) !important;
+}
+
+/* Attribution dark */
+.leaflet-control-attribution {
+  background: rgba(15, 23, 42, 0.75) !important;
+  color: #475569 !important;
+  font-size: 9px !important;
+  border-radius: 4px 0 0 0 !important;
+}
+.leaflet-control-attribution a { color: #64748b !important; }
+
+/* Zoom controls dark */
+.leaflet-control-zoom a {
+  background: rgba(15, 23, 42, 0.85) !important;
+  border-color: rgba(148, 163, 184, 0.15) !important;
+  color: #94a3b8 !important;
+}
+.leaflet-control-zoom a:hover {
+  background: rgba(30, 41, 59, 0.95) !important;
+  color: #e2e8f0 !important;
+}

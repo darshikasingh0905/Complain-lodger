@@ -5,6 +5,7 @@ import SubmitComplaint from './pages/SubmitComplaint';
 import TrackComplaint from './pages/TrackComplaint';
 import AdminPanel from './pages/AdminPanel';
 import EvidenceAnalyzer from './pages/EvidenceAnalyzer';
+import HeatmapView from './pages/HeatmapView';
 
 // Temporary placeholder screens for future milestones to support routing links
 
@@ -13,7 +14,7 @@ function AnalyticsPlaceholder() {
     <div className="glass-panel p-8 rounded-3xl text-center max-w-md mx-auto relative border border-white/5 shadow-xl">
       <h2 className="text-xl font-bold text-white mb-2">Predictive Analytics Dashboard</h2>
       <p className="text-slate-400 text-xs md:text-sm">
-        Hotspot warning and spatial clustering charts. This system connects to models in Milestone 8 & 9.
+        Chronological hotspot surge prediction and spatial clustering charts. Coming in Milestone 9.
       </p>
     </div>
   );
@@ -30,12 +31,13 @@ function App() {
         <Navbar />
 
         {/* Routed container wrapper */}
-        <main className="flex-grow flex items-center justify-center py-6 z-10">
+        <main className="flex-grow flex items-start justify-center py-6 z-10 w-full">
           <Routes>
             <Route path="/" element={<SubmitComplaint />} />
             <Route path="/track" element={<TrackComplaint />} />
             <Route path="/admin" element={<AdminPanel />} />
             <Route path="/evidence" element={<EvidenceAnalyzer />} />
+            <Route path="/map" element={<HeatmapView />} />
             <Route path="/analytics" element={<AnalyticsPlaceholder />} />
           </Routes>
         </main>
