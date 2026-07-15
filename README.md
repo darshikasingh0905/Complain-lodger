@@ -81,7 +81,7 @@ root/
 - [x] **Milestone 1**: Project Structure, FastAPI Setup, React Setup, MySQL connection
 - [x] **Milestone 2**: Database Schema, models, and CRUD endpoints code verification
 - [x] **Milestone 3**: Complaint submission page UI and frontend connection
-- [ ] **Milestone 4**: Ollama backend classification service integration
+- [x] **Milestone 4**: Ollama backend classification service integration
 - [ ] **Milestone 5**: Step-by-step grievance tracking workspace interface
 - [ ] **Milestone 6**: Admin dashboard, filtering tools, status updates
 - [ ] **Milestone 7**: AI target image/complaint verification (Evidence Analyzer)

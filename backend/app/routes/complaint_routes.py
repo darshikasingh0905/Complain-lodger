@@ -5,8 +5,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from app.database.db import get_db
-from app.schemas.complaint import ComplaintCreate, ComplaintResponse, ComplaintStatusUpdate
+from app.schemas.complaint import ComplaintCreate, ComplaintResponse, ComplaintStatusUpdate, ComplaintAIUpdate
 import app.services.complaint_service as service
+from app.services import ai_service
 
 router = APIRouter(
     prefix="/complaints",
@@ -146,3 +147,34 @@ def update_status(
             detail=f"Complaint with ID {complaint_id} does not exist"
         )
     return updated
+
+@router.post("/{complaint_id}/classify", response_model=ComplaintResponse)
+def reclassify_complaint(complaint_id: int, db: Session = Depends(get_db)):
+    """
+    (Re)runs AI classification on an existing complaint.
+    Uses Ollama if available, otherwise the keyword fallback.
+    """
+    complaint = service.get_complaint_by_id(db, complaint_id)
+    if not complaint:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Complaint with ID {complaint_id} does not exist"
+        )
+    try:
+        ai_result = ai_service.classify_complaint(complaint.description)
+        ai_update = service.update_complaint_ai(
+            db,
+            complaint_id,
+            ai_data=ComplaintAIUpdate(
+                department=ai_result["department"],
+                category=ai_result["category"],
+                priority=ai_result["priority"],
+                ai_summary=ai_result["ai_summary"],
+            ),
+        )
+        return ai_update
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"AI classification failed: {str(e)}"
+        )

@@ -3,9 +3,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from app.models.complaint import Complaint
 from app.schemas.complaint import ComplaintCreate, ComplaintStatusUpdate, ComplaintAIUpdate
+from app.services import ai_service
 
 def create_complaint(db: Session, schema: ComplaintCreate) -> Complaint:
-    """Inserts a new grievance record into the MySQL database."""
+    """
+    Inserts a new grievance record, then immediately runs AI classification
+    to populate department, category, priority, and ai_summary.
+    """
     db_obj = Complaint(
         citizen_name=schema.citizen_name,
         citizen_phone=schema.citizen_phone,
@@ -16,11 +20,27 @@ def create_complaint(db: Session, schema: ComplaintCreate) -> Complaint:
         image_url=schema.image_url,
         status="Submitted",
         department="Other",
-        priority="Medium"
+        priority="Medium",
     )
     db.add(db_obj)
     db.commit()
     db.refresh(db_obj)
+
+    # Run AI classification (Ollama or keyword fallback)
+    try:
+        ai_result = ai_service.classify_complaint(schema.description)
+        db_obj.department = ai_result["department"]
+        db_obj.category   = ai_result["category"]
+        db_obj.priority   = ai_result["priority"]
+        db_obj.ai_summary = ai_result["ai_summary"]
+        source = ai_result.get("source", "unknown")
+        print(f"[AI] Complaint #{db_obj.id} classified via '{source}': "
+              f"{db_obj.department} / {db_obj.priority}")
+        db.commit()
+        db.refresh(db_obj)
+    except Exception as e:
+        print(f"[AI] Classification failed for complaint #{db_obj.id}: {e}")
+
     return db_obj
 
 def get_complaints(db: Session, department: Optional[str] = None, status: Optional[str] = None) -> List[Complaint]:

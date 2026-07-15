@@ -155,11 +155,47 @@ function SubmitComplaint() {
             </div>
           </div>
 
-          <div className="text-left text-xs bg-slate-900/50 p-4 rounded-xl border border-white/5 text-slate-400 space-y-1">
-            <p><strong>Citizen:</strong> {successData.citizen_name || 'Anonymous'}</p>
-            <p><strong>Database Status:</strong> {successData.status}</p>
-            <p><strong>Location Filed:</strong> {successData.address || 'Coordinates Only'}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+            <div className="text-xs bg-slate-900/50 p-4 rounded-xl border border-white/5 text-slate-400 space-y-1.5">
+              <h3 className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-2">Submission Details</h3>
+              <p><strong>Citizen:</strong> {successData.citizen_name || 'Anonymous'}</p>
+              <p><strong>Phone:</strong> {successData.citizen_phone || 'Not Provided'}</p>
+              <p><strong>Status:</strong> <span className="text-emerald-400 font-semibold">{successData.status}</span></p>
+              <p className="truncate" title={successData.address || 'Coordinates Only'}>
+                <strong>Location:</strong> {successData.address || `${successData.latitude || '0'}, ${successData.longitude || '0'}`}
+              </p>
+            </div>
+
+            <div className="text-xs bg-slate-900/50 p-4 rounded-xl border border-white/5 text-slate-400 space-y-1.5">
+              <h3 className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-2">AI Classification</h3>
+              <p><strong>Department:</strong> <span className="text-sky-400 font-semibold">{successData.department}</span></p>
+              <p><strong>Category:</strong> <span className="text-slate-200 font-semibold">{successData.category}</span></p>
+              <p className="flex items-center gap-1.5">
+                <strong>Priority:</strong>
+                <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                  successData.priority === 'High' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
+                  successData.priority === 'Medium' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                  'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                }`}>
+                  {successData.priority}
+                </span>
+              </p>
+              <p className="flex items-center gap-1">
+                <strong>Routing:</strong>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded-md border border-sky-500/15">
+                  <span className="w-1 h-1 rounded-full bg-sky-400 animate-pulse" />
+                  Auto-Routed
+                </span>
+              </p>
+            </div>
           </div>
+
+          {successData.ai_summary && (
+            <div className="text-left text-xs bg-slate-900/30 p-4 rounded-xl border border-white/5 text-slate-400">
+              <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block mb-1">AI Generated Summary</span>
+              <p className="text-slate-350 italic">"{successData.ai_summary}"</p>
+            </div>
+          )}
 
           <div className="flex items-center justify-center gap-4">
             <button 
