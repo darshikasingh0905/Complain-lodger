@@ -122,3 +122,135 @@ def update_evidence_audit(
     db.commit()
     db.refresh(db_obj)
     return db_obj
+
+def get_analytics_data(db: Session):
+    """
+    Computes chronological trends, department counts, priority ratios,
+    and emerging high-risk hotspot surges by comparing complaint velocities.
+    """
+    from sqlalchemy import func, and_
+    from datetime import datetime, timedelta
+    
+    # 1. Chronological Trend (last 14 days)
+    today = datetime.now().date()
+    start_date = today - timedelta(days=13)
+    
+    # Query daily counts
+    daily_results = (
+        db.query(func.date(Complaint.created_at).label("day"), func.count(Complaint.id).label("count"))
+        .filter(Complaint.created_at >= datetime.combine(start_date, datetime.min.time()))
+        .group_by(func.date(Complaint.created_at))
+        .all()
+    )
+    
+    # Fill in potential zero-count gaps for the timeseries
+    daily_map = {r.day: r.count for r in daily_results}
+    trend = []
+    for i in range(14):
+        d = start_date + timedelta(days=i)
+        # Handle string formats vs date object comparisons
+        count = 0
+        for day_key, val in daily_map.items():
+            if str(day_key) == str(d):
+                count = val
+                break
+        trend.append({
+            "date": d.strftime("%b %d"),
+            "Grievances": count
+        })
+        
+    # 2. General Department Breakdown
+    dept_results = (
+        db.query(Complaint.department, func.count(Complaint.id).label("count"))
+        .group_by(Complaint.department)
+        .all()
+    )
+    departments = [
+        {"name": str(r.department or "Other"), "Grievances": int(r.count)}
+        for r in dept_results
+    ]
+    
+    # 3. Priority levels
+    priority_results = (
+        db.query(Complaint.priority, func.count(Complaint.id).label("count"))
+        .group_by(Complaint.priority)
+        .all()
+    )
+    priorities = [
+        {"name": str(r.priority or "Medium"), "value": int(r.count)}
+        for r in priority_results
+    ]
+    
+    # 4. Chronological Surge Prediction (Emerging Hotspots)
+    # Compare count in last 3 days vs preceding 7 days to estimate acceleration/surge
+    three_days_ago = datetime.now() - timedelta(days=3)
+    ten_days_ago = datetime.now() - timedelta(days=10)
+    
+    # Group by location/area and department to locate specific hotspot issues
+    hotspots_data = (
+        db.query(
+            Complaint.department,
+            Complaint.address,
+            func.count(Complaint.id).label("total_count"),
+            func.sum(func.if_(Complaint.created_at >= three_days_ago, 1, 0)).label("recent_count"),
+            func.sum(func.if_(and_(Complaint.created_at >= ten_days_ago, Complaint.created_at < three_days_ago), 1, 0)).label("prev_count")
+        )
+        .group_by(Complaint.department, Complaint.address)
+        .all()
+    )
+    
+    emerging_hotspots = []
+    for h in hotspots_data:
+        # We only consider hotspots with at least 1 recent complain and some address or department focus
+        dept = h.department or "Other"
+        addr = h.address or "General Zone"
+        total = int(h.total_count or 0)
+        recent = int(h.recent_count or 0)
+        prev = int(h.prev_count or 0)
+        
+        # Calculate surge velocity
+        # If no previous complaints, but recent ones exist, spike is defined as recent * 100%
+        # If previous complaints exist, spike % is (recent / prev) factor
+        if recent > 0:
+            if prev == 0:
+                surge_rate = 100.0 if total == recent else (recent * 50.0)
+            else:
+                surge_rate = (recent / (prev / 2.33)) * 100.0 # normalized weight
+                
+            # Cap surge rate to realistic numbers
+            surge_rate = round(min(500.0, surge_rate), 1)
+            
+            # Categorize Risk
+            if surge_rate >= 150.0 or (recent >= 3 and surge_rate >= 100.0):
+                risk = "CRITICAL"
+                forecast = "High probability of complete failure / backup within 24-48 hours. Dispatch recommended."
+            elif surge_rate >= 70.0:
+                risk = "WARNING"
+                forecast = "Spike in activity detected. Infrastructure showing signs of stress. Monitor closely."
+            else:
+                risk = "STABLE"
+                forecast = "Normal consistent reports. No sudden spikes detected."
+                
+            # Filter stability if it doesn't represent any real emergence of issue
+            if risk in ["CRITICAL", "WARNING"] or total >= 2:
+                emerging_hotspots.append({
+                    "id": len(emerging_hotspots) + 1,
+                    "department": dept,
+                    "location": addr,
+                    "total": total,
+                    "recent": recent,
+                    "surge_rate": surge_rate,
+                    "risk": risk,
+                    "forecast": forecast
+                })
+                
+    # Sort hotspots by surge rate or severity descending
+    emerging_hotspots.sort(key=lambda x: (x["risk"] == "CRITICAL", x["surge_rate"]), reverse=True)
+    
+    return {
+        "trend": trend,
+        "departments": departments,
+        "priorities": priorities,
+        "emerging_hotspots": emerging_hotspots[:8] # Send top 8
+    }
+

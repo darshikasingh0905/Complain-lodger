@@ -261,3 +261,18 @@ def analyze_evidence(complaint_id: int, db: Session = Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Evidence analysis failed: {str(e)}"
         )
+
+@router.get("/trends")
+def get_complaint_trends(db: Session = Depends(get_db)):
+    """
+    Retrieves chronological trending data, department frequencies, priority metrics,
+    and emerging high-risk hotspot warning zones.
+    """
+    try:
+        return service.get_analytics_data(db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch chronological analytics data: {str(e)}"
+        )
+

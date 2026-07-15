@@ -6,19 +6,7 @@ import TrackComplaint from './pages/TrackComplaint';
 import AdminPanel from './pages/AdminPanel';
 import EvidenceAnalyzer from './pages/EvidenceAnalyzer';
 import HeatmapView from './pages/HeatmapView';
-
-// Temporary placeholder screens for future milestones to support routing links
-
-function AnalyticsPlaceholder() {
-  return (
-    <div className="glass-panel p-8 rounded-3xl text-center max-w-md mx-auto relative border border-white/5 shadow-xl">
-      <h2 className="text-xl font-bold text-white mb-2">Predictive Analytics Dashboard</h2>
-      <p className="text-slate-400 text-xs md:text-sm">
-        Chronological hotspot surge prediction and spatial clustering charts. Coming in Milestone 9.
-      </p>
-    </div>
-  );
-}
+import AnalyticsDashboard from './pages/AnalyticsDashboard';
 
 function App() {
   return (
@@ -38,9 +26,10 @@ function App() {
             <Route path="/admin" element={<AdminPanel />} />
             <Route path="/evidence" element={<EvidenceAnalyzer />} />
             <Route path="/map" element={<HeatmapView />} />
-            <Route path="/analytics" element={<AnalyticsPlaceholder />} />
+            <Route path="/analytics" element={<AnalyticsDashboard />} />
           </Routes>
         </main>
+
 
         <footer className="text-center text-xs text-slate-650 pt-8 mt-12 border-t border-slate-900">
           <p>© 2026 AI-Powered Grievance Lodging and Tracking System (Hackathon Ready)</p>
