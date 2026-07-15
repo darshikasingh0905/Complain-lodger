@@ -23,12 +23,21 @@ class ComplaintAIUpdate(BaseModel):
     priority: Optional[str] = None
     ai_summary: Optional[str] = None
 
+class EvidenceAuditResult(BaseModel):
+    verdict: str  # MATCH, MISMATCH, UNCERTAIN
+    reason: str
+    confidence: float
+    source: str  # 'ollama_vision' or 'fallback'
+
 class ComplaintResponse(ComplaintBase):
     id: int
     department: Optional[str] = None
     category: Optional[str] = None
     priority: Optional[str] = None
     ai_summary: Optional[str] = None
+    evidence_verdict: Optional[str] = None
+    evidence_reason: Optional[str] = None
+    evidence_confidence: Optional[float] = None
     status: str
     created_at: datetime
     updated_at: datetime

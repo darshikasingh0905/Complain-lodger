@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from app.database.db import get_db
-from app.schemas.complaint import ComplaintCreate, ComplaintResponse, ComplaintStatusUpdate, ComplaintAIUpdate
+from app.schemas.complaint import ComplaintCreate, ComplaintResponse, ComplaintStatusUpdate, ComplaintAIUpdate, EvidenceAuditResult
 import app.services.complaint_service as service
 from app.services import ai_service
 
@@ -177,4 +177,49 @@ def reclassify_complaint(complaint_id: int, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"AI classification failed: {str(e)}"
+        )
+
+@router.post("/{complaint_id}/analyze-evidence", response_model=ComplaintResponse)
+def analyze_evidence(complaint_id: int, db: Session = Depends(get_db)):
+    """
+    Runs vision AI analysis on a complaint's attached evidence image to verify
+    if it matches the complaint description. Stores verdict (MATCH/MISMATCH/UNCERTAIN),
+    reason, and confidence score on the complaint record.
+    """
+    complaint = service.get_complaint_by_id(db, complaint_id)
+    if not complaint:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Complaint with ID {complaint_id} does not exist"
+        )
+    if not complaint.image_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This complaint has no attached evidence image to analyze."
+        )
+
+    # Resolve the absolute path of the locally saved image
+    image_path = os.path.join(BASE_DIR, complaint.image_url.replace("/", os.sep))
+    if not os.path.exists(image_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Evidence image file not found on server: {complaint.image_url}"
+        )
+
+    try:
+        audit = ai_service.analyze_evidence(image_path, complaint.description)
+        updated = service.update_evidence_audit(
+            db,
+            complaint_id,
+            verdict=audit["verdict"],
+            reason=audit["reason"],
+            confidence=audit["confidence"],
+        )
+        print(f"[Vision] Complaint #{complaint_id} audit: {audit['verdict']} "
+              f"({audit['confidence']:.0%} confidence) via '{audit.get('source', 'unknown')}'")
+        return updated
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Evidence analysis failed: {str(e)}"
         )

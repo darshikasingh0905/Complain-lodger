@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Enum
 from app.database.db import Base
 
 class Complaint(Base):
@@ -20,6 +20,11 @@ class Complaint(Base):
     priority = Column(String(20), nullable=True, default="Medium")
     ai_summary = Column(Text, nullable=True)
     
+    # Evidence Audit Fields (filled by Vision LLM)
+    evidence_verdict = Column(String(20), nullable=True)  # MATCH, MISMATCH, UNCERTAIN
+    evidence_reason = Column(Text, nullable=True)
+    evidence_confidence = Column(Float, nullable=True)
+
     # Lifecycle Status: Submitted, Assigned, In Progress, Resolved
     status = Column(String(30), nullable=False, default="Submitted")
     
@@ -40,6 +45,9 @@ class Complaint(Base):
             "category": self.category,
             "priority": self.priority,
             "ai_summary": self.ai_summary,
+            "evidence_verdict": self.evidence_verdict,
+            "evidence_reason": self.evidence_reason,
+            "evidence_confidence": self.evidence_confidence,
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

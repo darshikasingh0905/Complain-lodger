@@ -20,7 +20,12 @@ import {
   FolderDot,
   FileQuestion,
   HelpCircle,
-  CheckCircle
+  CheckCircle,
+  ScanSearch,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldQuestion,
+  Loader2
 } from 'lucide-react';
 
 const STATUS_OPTIONS = ['Submitted', 'Assigned', 'In Progress', 'Resolved'];
@@ -49,6 +54,7 @@ function AdminPanel() {
   // Action Loading States
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [reclassifying, setReclassifying] = useState(false);
+  const [auditingEvidence, setAuditingEvidence] = useState(false);
   const [actionSuccess, setActionSuccess] = useState(null);
 
   // Fetch all complaints on load
@@ -124,6 +130,29 @@ function AdminPanel() {
       alert(err.response?.data?.detail || "AI Reclassification pipeline failed.");
     } finally {
       setReclassifying(false);
+    }
+  };
+
+  // Evidence Audit Action
+  const handleEvidenceAudit = async (cid) => {
+    setAuditingEvidence(true);
+    setActionSuccess(null);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+      const response = await axios.post(`${apiUrl}/complaints/${cid}/analyze-evidence`);
+      setComplaints(prev => prev.map(c => c.id === cid ? response.data : c));
+      setSelectedComplaint(response.data);
+      const v = response.data.evidence_verdict;
+      setActionSuccess(
+        v === 'MATCH' ? '✅ Evidence verified — image matches the complaint.' :
+        v === 'MISMATCH' ? '⚠️ Mismatch detected — image may not relate to reported issue.' :
+        '❓ Audit complete — verdict is uncertain.'
+      );
+      setTimeout(() => setActionSuccess(null), 5000);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Evidence audit failed. Vision model may be unavailable.');
+    } finally {
+      setAuditingEvidence(false);
     }
   };
 
@@ -475,7 +504,7 @@ function AdminPanel() {
                   </div>
                 </div>
 
-                {/* Evidence Image */}
+                {/* Evidence Image + Audit Result */}
                 {selectedComplaint.image_url && (
                   <div className="space-y-2 text-xs pt-4 border-t border-slate-900/60 mt-4">
                     <span className="font-extrabold uppercase text-[9px] text-slate-500 tracking-wider block">Uploaded Evidence Image</span>
@@ -486,6 +515,34 @@ function AdminPanel() {
                         className="max-h-40 w-full object-contain rounded-lg bg-slate-900 border border-white/5 transition-transform duration-300 group-hover:scale-[1.01]"
                       />
                     </div>
+
+                    {/* Evidence Verdict Badge */}
+                    {selectedComplaint.evidence_verdict && (
+                      <div className={`flex items-start gap-2.5 p-3 rounded-xl border text-xs ${
+                        selectedComplaint.evidence_verdict === 'MATCH'
+                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                          : selectedComplaint.evidence_verdict === 'MISMATCH'
+                          ? 'bg-rose-500/10 border-rose-500/20 text-rose-300'
+                          : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+                      }`}>
+                        {selectedComplaint.evidence_verdict === 'MATCH' ? <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" /> :
+                         selectedComplaint.evidence_verdict === 'MISMATCH' ? <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" /> :
+                         <ShieldQuestion className="w-4 h-4 shrink-0 mt-0.5" />}
+                        <div>
+                          <p className="font-bold text-[10px] uppercase tracking-wider">
+                            Evidence {selectedComplaint.evidence_verdict}
+                            {selectedComplaint.evidence_confidence != null && (
+                              <span className="ml-2 font-normal normal-case opacity-70">
+                                ({Math.round(selectedComplaint.evidence_confidence * 100)}% confidence)
+                              </span>
+                            )}
+                          </p>
+                          {selectedComplaint.evidence_reason && (
+                            <p className="mt-0.5 opacity-80 leading-relaxed">{selectedComplaint.evidence_reason}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -556,6 +613,23 @@ function AdminPanel() {
                       <RefreshCw className={`w-3.5 h-3.5 ${reclassifying ? 'animate-spin' : ''}`} />
                       {reclassifying ? 'Reclassifying...' : 'Re-run AI Routing'}
                     </button>
+
+                    {/* Evidence Audit Button */}
+                    {selectedComplaint.image_url && (
+                      <button
+                        id={`admin-audit-evidence-btn-${selectedComplaint.id}`}
+                        disabled={auditingEvidence}
+                        onClick={() => handleEvidenceAudit(selectedComplaint.id)}
+                        className="w-full py-3 bg-purple-900/30 border border-purple-500/20 hover:bg-purple-900/50 hover:border-purple-500/40 shadow-md text-purple-400 hover:text-purple-300 disabled:opacity-50 text-xs font-extrabold uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {auditingEvidence ? (
+                          <><Loader2 className="w-3.5 h-3.5 animate-spin" />Analyzing Image...</>
+                        ) : (
+                          <><ScanSearch className="w-3.5 h-3.5" />
+                          {selectedComplaint.evidence_verdict ? 'Re-audit Evidence' : 'Audit Evidence Image'}</>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
 

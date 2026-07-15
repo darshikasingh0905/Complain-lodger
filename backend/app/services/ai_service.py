@@ -10,11 +10,13 @@ system stays functional during development / demo.
 import os
 import re
 import json
+import base64
 import requests
 from typing import Dict
 
 OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "llama3.2-vision")
 OLLAMA_TIMEOUT = 15  # seconds
 
 DEPARTMENTS = [
@@ -224,3 +226,112 @@ def classify_complaint(description: str) -> Dict[str, str]:
         return result
 
     return _keyword_classify(description)
+
+
+# ---------------------------------------------------------------------------
+# Vision Evidence Audit
+# ---------------------------------------------------------------------------
+
+_VISION_PROMPT_TEMPLATE = """You are an AI evidence auditor for a government grievance portal.
+A citizen has submitted a complaint with the following description:
+\"\"\"{description}\"\"\"
+
+Carefully examine the attached image and determine if it is consistent with the above complaint.
+Return ONLY a valid JSON object with these fields:
+- verdict: one of [MATCH, MISMATCH, UNCERTAIN]
+  - MATCH: the image clearly shows the reported issue
+  - MISMATCH: the image is unrelated or contradicts the complaint (possible fraud)
+  - UNCERTAIN: the image is ambiguous, too dark, irrelevant metadata, or unreadable
+- reason: a single sentence explaining your verdict
+- confidence: a float between 0.0 (no confidence) and 1.0 (fully confident)
+
+Respond with ONLY the JSON object. No explanation, no markdown.
+Example: {{"verdict":"MATCH","reason":"Image clearly shows a pothole on a road surface.","confidence":0.92}}"""
+
+
+def _fallback_audit(reason: str) -> Dict:
+    return {
+        "verdict": "UNCERTAIN",
+        "reason": reason,
+        "confidence": 0.0,
+        "source": "fallback",
+    }
+
+
+def analyze_evidence(image_path: str, description: str) -> Dict:
+    """
+    Calls the Ollama Vision model to audit whether the uploaded image
+    is consistent with the complaint description.
+
+    Returns a dict with: verdict, reason, confidence, source.
+    Falls back gracefully if the model or file is unavailable.
+    """
+    if not image_path or not description:
+        return _fallback_audit("Missing image path or complaint description.")
+
+    # Read and base64-encode the image
+    try:
+        with open(image_path, "rb") as f:
+            image_b64 = base64.b64encode(f.read()).decode("utf-8")
+    except FileNotFoundError:
+        return _fallback_audit(f"Evidence image not found at path: {image_path}")
+    except Exception as e:
+        return _fallback_audit(f"Failed to read evidence image: {str(e)}")
+
+    prompt = _VISION_PROMPT_TEMPLATE.format(description=description)
+
+    # Detect image format from extension
+    ext = os.path.splitext(image_path)[1].lower().lstrip(".")
+    mime_map = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "gif": "gif", "webp": "webp"}
+    img_format = mime_map.get(ext, "jpeg")
+
+    payload = {
+        "model": OLLAMA_VISION_MODEL,
+        "prompt": prompt,
+        "images": [image_b64],
+        "stream": False,
+        "format": "json",
+        "options": {"temperature": 0.1, "num_predict": 250},
+    }
+
+    try:
+        response = requests.post(
+            f"{OLLAMA_API_URL}/api/generate",
+            json=payload,
+            timeout=60,  # Vision models are slower
+        )
+        response.raise_for_status()
+        raw = response.json().get("response", "")
+
+        json_match = re.search(r"\{.*?\}", raw, re.DOTALL)
+        if not json_match:
+            return _fallback_audit("Vision model returned unparseable response.")
+
+        parsed = json.loads(json_match.group())
+        verdict = parsed.get("verdict", "UNCERTAIN")
+        if verdict not in ["MATCH", "MISMATCH", "UNCERTAIN"]:
+            verdict = "UNCERTAIN"
+
+        confidence = parsed.get("confidence", 0.5)
+        try:
+            confidence = float(confidence)
+            confidence = max(0.0, min(1.0, confidence))
+        except (TypeError, ValueError):
+            confidence = 0.5
+
+        return {
+            "verdict": verdict,
+            "reason": parsed.get("reason", "No reason provided."),
+            "confidence": confidence,
+            "source": "ollama_vision",
+        }
+
+    except requests.exceptions.ConnectionError:
+        print(f"[Vision AI] Ollama Vision not reachable at {OLLAMA_API_URL}. Using fallback.")
+        return _fallback_audit("Vision model service is currently unavailable.")
+    except requests.exceptions.Timeout:
+        print("[Vision AI] Ollama Vision request timed out.")
+        return _fallback_audit("Vision model request timed out. Please try again.")
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        print(f"[Vision AI] Failed to parse vision response: {e}")
+        return _fallback_audit("Failed to parse vision model response.")

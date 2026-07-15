@@ -104,3 +104,21 @@ def update_complaint_ai(db: Session, complaint_id: int, ai_data: ComplaintAIUpda
     db.commit()
     db.refresh(db_obj)
     return db_obj
+
+def update_evidence_audit(
+    db: Session,
+    complaint_id: int,
+    verdict: str,
+    reason: str,
+    confidence: float
+) -> Optional[Complaint]:
+    """Saves vision AI evidence audit results to the complaint record."""
+    db_obj = get_complaint_by_id(db, complaint_id)
+    if not db_obj:
+        return None
+    db_obj.evidence_verdict = verdict
+    db_obj.evidence_reason = reason
+    db_obj.evidence_confidence = confidence
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj

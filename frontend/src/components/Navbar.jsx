@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ShieldCheck, PlusCircle, Search, LayoutDashboard, BarChart3 } from 'lucide-react';
+import { ShieldCheck, PlusCircle, Search, LayoutDashboard, BarChart3, ScanSearch } from 'lucide-react';
 
 function Navbar() {
   const location = useLocation();
@@ -10,6 +10,7 @@ function Navbar() {
     { path: '/', label: 'Lodge Complaint', icon: PlusCircle },
     { path: '/track', label: 'Track Status', icon: Search },
     { path: '/admin', label: 'Admin Panel', icon: LayoutDashboard },
+    { path: '/evidence', label: 'Evidence Audit', icon: ScanSearch },
     { path: '/analytics', label: 'Analytics', icon: BarChart3 }
   ];
 

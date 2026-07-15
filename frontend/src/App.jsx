@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import SubmitComplaint from './pages/SubmitComplaint';
 import TrackComplaint from './pages/TrackComplaint';
 import AdminPanel from './pages/AdminPanel';
+import EvidenceAnalyzer from './pages/EvidenceAnalyzer';
 
 // Temporary placeholder screens for future milestones to support routing links
 
@@ -34,6 +35,7 @@ function App() {
             <Route path="/" element={<SubmitComplaint />} />
             <Route path="/track" element={<TrackComplaint />} />
             <Route path="/admin" element={<AdminPanel />} />
+            <Route path="/evidence" element={<EvidenceAnalyzer />} />
             <Route path="/analytics" element={<AnalyticsPlaceholder />} />
           </Routes>
         </main>
