@@ -92,7 +92,9 @@ export default function SafetyPage() {
   );
 
   const startReport = (preset) =>
-    navigate("/", { state: { safetyPreset: { title: preset.title, starter: preset.starter } } });
+    navigate("/safety/report", {
+      state: preset ? { safetyPreset: { title: preset.title, starter: preset.starter } } : undefined,
+    });
 
   return (
     <div className="max-w-6xl mx-auto w-full space-y-6 animate-fade-in">
@@ -188,6 +190,14 @@ export default function SafetyPage() {
             );
           })}
         </div>
+
+        <button
+          onClick={() => startReport(null)}
+          className="btn-secondary w-full mt-4 !py-2.5 text-xs"
+        >
+          Something else? Open the safety report form
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
 
         {/* Helplines */}
         <div className="mt-5 pt-4 border-t border-border flex flex-wrap items-center gap-x-6 gap-y-2">

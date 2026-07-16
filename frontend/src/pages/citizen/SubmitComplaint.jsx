@@ -165,34 +165,29 @@ const SectionHeading = ({ step, title, subtitle }) => (
 );
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-function SubmitComplaint() {
+/**
+ * Complaint form, in two completely separate flavours:
+ *  - civic (default, at "/"): plain grievance form — no safety UI, photo required
+ *  - safety (safetyForm=true, at "/safety/report"): safety panels + presets +
+ *    helplines, photo optional; women panel when Women Safety Mode is on,
+ *    general safety panel otherwise
+ */
+function SubmitComplaint({ safetyForm = false }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { addComplaint } = useComplaints();
   const { safetyMode } = useSafetyMode();
   const [activePreset, setActivePreset] = useState(null);
 
-  // Arrived from the Safety Center with a quick-report preset?
-  // Safety intakes (like Women Safety Mode) don't require photo evidence.
-  const [safetyIntake, setSafetyIntake] = useState(false);
+  // Quick-report preset passed from the Safety Center
   useEffect(() => {
     const p = location.state?.safetyPreset;
-    if (p) {
+    if (safetyForm && p) {
       setTitle(p.title);
       setDescription(p.starter);
-      setSafetyIntake(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // If Women Safety Mode is switched OFF mid-report, stay in the safety flow:
-  // the form falls back to the general (green) safety panel instead of
-  // reverting to a plain grievance form.
-  const prevSafetyMode = useRef(safetyMode);
-  useEffect(() => {
-    if (prevSafetyMode.current && !safetyMode) setSafetyIntake(true);
-    prevSafetyMode.current = safetyMode;
-  }, [safetyMode]);
 
   // ── Citizen profile ────────────────────────────────────────────────────────
   const [citizen, setCitizen] = useState(null);
@@ -338,10 +333,10 @@ function SubmitComplaint() {
     if (!description.trim()) e.description = "Please describe the issue.";
     if (description.length > 1000) e.description = "Description must not exceed 1000 characters.";
     if (pinCode && !/^\d{6}$/.test(pinCode)) e.pinCode = "Pin code must be exactly 6 digits.";
-    // Photo evidence is NOT required for safety reports (Women Safety Mode or
-    // Safety Center intakes) — incidents like harassment or robbery rarely
-    // have photos, and demanding one is a barrier to reporting.
-    if (!safetyMode && !safetyIntake && images.length === 0)
+    // Photo evidence is required for civic grievances, but NOT for safety
+    // reports — incidents like harassment or robbery rarely have photos,
+    // and demanding one is a barrier to reporting.
+    if (!safetyForm && images.length === 0)
       e.images = "Please upload at least one image of the issue.";
     return e;
   };
@@ -477,15 +472,18 @@ function SubmitComplaint() {
       {/* Page header */}
       <div className="card relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-1 bg-primary" />
-        <h1 className="text-xl font-bold text-text">Lodge a Grievance</h1>
+        <h1 className="text-xl font-bold text-text">
+          {safetyForm ? "Report a Safety Issue" : "Lodge a Grievance"}
+        </h1>
         <p className="text-sm text-muted mt-1">
-          Provide the details and location of your grievance to submit it to the
-          appropriate department.
+          {safetyForm
+            ? "Safety reports are prioritized and routed to the right cell. Photo evidence is optional."
+            : "Provide the details and location of your grievance to submit it to the appropriate department."}
         </p>
       </div>
 
-      {/* ── General safety panel (green) — safety flow without Women Mode ── */}
-      {!safetyMode && safetyIntake && (
+      {/* ── General safety panel (green) — safety form without Women Mode ── */}
+      {safetyForm && !safetyMode && (
         <div className="card !border-primary/30 relative overflow-hidden animate-fade-in">
           <div className="absolute top-0 left-0 w-full h-1 bg-primary" />
           <div className="flex items-start gap-3">
@@ -543,8 +541,8 @@ function SubmitComplaint() {
         </div>
       )}
 
-      {/* ── Women Safety panel (USP) ── */}
-      {safetyMode && (
+      {/* ── Women Safety panel (USP) — safety form with Women Mode on ── */}
+      {safetyForm && safetyMode && (
         <div className="card !border-primary/30 relative overflow-hidden animate-fade-in">
           <div className="absolute top-0 left-0 w-full h-1 bg-primary" />
           <div className="flex items-start gap-3">
@@ -814,7 +812,7 @@ function SubmitComplaint() {
             <div className="flex items-center justify-between">
               <label className="label">
                 Evidence Images{" "}
-                {safetyMode || safetyIntake ? (
+                {safetyForm ? (
                   <span className="text-muted font-normal normal-case">(optional for safety reports)</span>
                 ) : (
                   <span className="text-status-error-accent">*</span>
@@ -824,7 +822,7 @@ function SubmitComplaint() {
                 {images.length}/{MAX_IMAGES} uploaded
               </span>
             </div>
-            {(safetyMode || safetyIntake) && images.length === 0 && (
+            {safetyForm && images.length === 0 && (
               <p className="text-[11px] text-muted mb-1.5">
                 No photo needed — we understand safety incidents often can't be photographed.
                 Your description is enough.

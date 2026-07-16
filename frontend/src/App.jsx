@@ -89,6 +89,14 @@ function App() {
                     </RoleGuard>
                   }
                 />
+                <Route
+                  path="/safety/report"
+                  element={
+                    <RoleGuard allowedRoles={["citizen"]}>
+                      <SubmitComplaint safetyForm />
+                    </RoleGuard>
+                  }
+                />
 
                 {/* Admin routes */}
                 <Route

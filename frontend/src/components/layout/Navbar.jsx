@@ -112,12 +112,12 @@ function Navbar() {
               })}
             </div>
 
-            {/* Women Safety Mode toggle — on the complaint form (switch modes
-                mid-complaint) and anywhere the mode is on so it can be turned
-                off. Hidden on /safety: that page has its own large switch. */}
+            {/* Women Safety Mode toggle — on the SAFETY report form (switch
+                modes mid-report) and anywhere the mode is on so it can be
+                turned off. Hidden on /safety: that page has its own switch. */}
             {userRole === "citizen" &&
               currentPath !== "/safety" &&
-              (currentPath === "/" || safetyMode) && (
+              (currentPath === "/safety/report" || safetyMode) && (
               <button
                 onClick={toggleSafetyMode}
                 role="switch"
