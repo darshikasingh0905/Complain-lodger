@@ -15,7 +15,8 @@ import {
   ClipboardList,
   PlusCircle,
   BarChart2,
-  Zap
+  Zap,
+  Star
 } from 'lucide-react';
 import { useComplaints } from '../context/ComplaintContext';
 import useAuth from '../hooks/useAuth';
@@ -47,10 +48,16 @@ const dotStyle = (status) => {
 function TrackComplaint() {
   const navigate = useNavigate();
   const { userData } = useAuth();
-  const { complaints, loadingComplaints } = useComplaints();
+  const { complaints, loadingComplaints, updateStatus, confirmComplaintResolution } = useComplaints();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedComplaint, setSelectedComplaint] = useState(null);
+  
+  const [showFeedbackForm, setShowFeedbackForm] = useState(false);
+  const [rating, setRating] = useState(5);
+  const [feedback, setFeedback] = useState('');
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [actionSuccess, setActionSuccess] = useState('');
 
   // All complaints belonging to this citizen
   const myCitizenId = userData?.aadhaar || '';
@@ -73,6 +80,7 @@ function TrackComplaint() {
 
   // Timeline step
   const activeStepIdx = (status) => {
+    if (status === 'Closed') return 3;
     const idx = STATUS_LIST.indexOf(status);
     return idx >= 0 ? idx : 0;
   };
@@ -257,6 +265,164 @@ function TrackComplaint() {
                     {current.status}
                   </span>
                 </div>
+
+                {actionSuccess && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl px-4 py-3 text-xs font-semibold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" />
+                    {actionSuccess}
+                  </div>
+                )}
+
+                {/* SLA Escalation alert banner */}
+                {current.is_escalated && (
+                  <div className="bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl p-4 flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 animate-pulse" />
+                    <div className="space-y-0.5">
+                      <h4 className="text-xs font-bold uppercase tracking-wide">SLA Breached & Escalated</h4>
+                      <p className="text-[10px] text-slate-400 leading-normal">
+                        This grievance has exceeded its standard resolution timeline. It has been escalated to senior supervisors for immediate intervention and dispatch.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Citizen Resolution Action Panel */}
+                {current.status === 'Resolved' && (
+                  <div className="bg-slate-900/60 border border-emerald-500/20 rounded-2xl p-5 space-y-4">
+                    <div className="flex items-start gap-3">
+                      <ThumbsUp className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="text-sm font-bold text-white">Grievance Resolved</h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                          The department has marked this issue as resolved. Please review the work and confirm if the issue is closed or reopen if it remains unresolved.
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {!showFeedbackForm ? (
+                      <div className="flex gap-2.5 pt-2">
+                        <button
+                          onClick={() => setShowFeedbackForm(true)}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs uppercase tracking-wider transition-all duration-200 cursor-pointer text-center"
+                        >
+                          Confirm Resolution
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await updateStatus(current.id, 'In Progress');
+                              setActionSuccess('Grievance reopened and crews notified.');
+                              setTimeout(() => setActionSuccess(''), 4000);
+                            } catch (e) {
+                              alert('Failed to reopen grievance.');
+                            }
+                          }}
+                          className="flex-1 bg-slate-800 hover:bg-rose-950/20 text-slate-350 hover:text-rose-400 border border-white/5 hover:border-rose-500/20 py-2.5 px-4 rounded-xl text-xs uppercase tracking-wider transition-all duration-200 cursor-pointer text-center"
+                        >
+                          Reopen Issue
+                        </button>
+                      </div>
+                    ) : (
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          setSubmittingFeedback(true);
+                          try {
+                            await confirmComplaintResolution(current.id, rating, feedback);
+                            setActionSuccess('Thank you! Grievance closed with feedback.');
+                            setShowFeedbackForm(false);
+                            setFeedback('');
+                            setRating(5);
+                            setTimeout(() => setActionSuccess(''), 4000);
+                          } catch (e) {
+                            alert('Failed to submit resolution confirmation.');
+                          } finally {
+                            setSubmittingFeedback(false);
+                          }
+                        }}
+                        className="space-y-3 pt-2 border-t border-slate-900"
+                      >
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-400 font-extrabold uppercase block">Rate the Resolution</label>
+                          <div className="flex gap-1.5">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <button
+                                key={star}
+                                type="button"
+                                onClick={() => setRating(star)}
+                                className="focus:outline-none cursor-pointer group"
+                              >
+                                <Star
+                                  className={`w-5 h-5 transition-colors ${
+                                    star <= rating
+                                      ? 'text-amber-400 fill-amber-400 group-hover:scale-105'
+                                      : 'text-slate-600 hover:text-amber-300'
+                                  }`}
+                                />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-400 font-extrabold uppercase block">Feedback Comments (Optional)</label>
+                          <textarea
+                            value={feedback}
+                            onChange={(e) => setFeedback(e.target.value)}
+                            placeholder="Tell us if the issue was fully fixed..."
+                            className="w-full bg-slate-950 border border-slate-900 rounded-xl p-3 text-xs text-white placeholder-slate-605 focus:outline-none focus:border-sky-500/50 resize-none h-16"
+                          />
+                        </div>
+                        
+                        <div className="flex gap-2 justify-end pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setShowFeedbackForm(false)}
+                            className="bg-slate-900 border border-white/5 text-slate-400 hover:text-slate-350 text-[10px] font-bold uppercase tracking-wider py-2 px-3 rounded-lg cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={submittingFeedback}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold uppercase tracking-wider py-2 px-4 rounded-lg cursor-pointer disabled:opacity-50"
+                          >
+                            {submittingFeedback ? 'Submitting...' : 'Submit & Close'}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                )}
+
+                {/* Closed Feedback Display */}
+                {current.status === 'Closed' && current.rating && (
+                  <div className="bg-slate-900/40 border border-white/5 rounded-2xl p-4 text-xs space-y-2">
+                    <span className="text-[9px] text-slate-550 font-bold uppercase tracking-wide block border-b border-white/5 pb-1 text-slate-400">
+                      Citizen Feedback & Close Rating
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-450">Rating:</span>
+                      <div className="flex gap-0.5">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <Star
+                            key={star}
+                            className={`w-3.5 h-3.5 ${
+                              star <= current.rating
+                                ? 'text-amber-400 fill-amber-400'
+                                : 'text-slate-800'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    {current.feedback && (
+                      <p className="text-slate-350 italic mt-1 leading-normal">
+                        "{current.feedback}"
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Complaint title */}
                 <div className="bg-slate-900/40 px-4 py-3 rounded-xl border border-white/5 text-xs">

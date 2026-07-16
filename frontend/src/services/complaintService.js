@@ -322,7 +322,115 @@ const CONFIG_PRIORITY = {
   ]
 };
 
-const calculateLocalPriority = (description, address, category, createdAt, status, aiResult, allComplaints) => {
+const NOTIFICATIONS_KEY = 'notifications';
+
+export const getNotifications = async (phone) => {
+  await new Promise((r) => setTimeout(r, 60));
+  try {
+    const raw = localStorage.getItem(NOTIFICATIONS_KEY) || '[]';
+    const list = JSON.parse(raw);
+    const cleanPhone = (phone || '').replace(/\s+/g, '');
+    return list.filter(n => (n.citizen_phone || '').replace(/\s+/g, '') === cleanPhone);
+  } catch {
+    return [];
+  }
+};
+
+export const markNotificationAsRead = async (id) => {
+  await new Promise((r) => setTimeout(r, 60));
+  try {
+    const raw = localStorage.getItem(NOTIFICATIONS_KEY) || '[]';
+    const list = JSON.parse(raw);
+    const idx = list.findIndex(n => n.id === id);
+    if (idx !== -1) {
+      list[idx].is_read = true;
+      localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(list));
+      return { status: "success", id };
+    }
+  } catch (e) {
+    console.error("Error marking notification read", e);
+  }
+  return { status: "error" };
+};
+
+export const createLocalNotification = (complaintId, phone, message, type = "status_change") => {
+  try {
+    const raw = localStorage.getItem(NOTIFICATIONS_KEY) || '[]';
+    const list = JSON.parse(raw);
+    const newNotif = {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      complaint_id: complaintId,
+      citizen_phone: phone,
+      message,
+      type,
+      is_read: false,
+      created_at: new Date().toISOString()
+    };
+    list.unshift(newNotif);
+    localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(list));
+    
+    // Log simulated alerts to console
+    console.log(`\n=================== [LOCAL SIMULATED NOTIFICATION] ===================`);
+    console.log(`[*] Local Storage Alert for Ticket #${complaintId}:`);
+    console.log(`[LOCAL SMS] To +91 ${phone}: "${message}"`);
+    console.log(`[LOCAL Email] To citizen_${phone}@gmail.com: "${message}"`);
+    console.log(`======================================================================\n`);
+    
+    return newNotif;
+  } catch (e) {
+    console.error("Error creating local notification", e);
+  }
+  return null;
+};
+
+const checkLocalSLAsAndEscalate = (list) => {
+  const SLA_LIMITS = {
+    "Critical": 24,
+    "High": 72,
+    "Medium": 168,
+    "Low": 336
+  };
+  
+  let changed = false;
+  
+  const updated = list.map(c => {
+    if (['Assigned', 'In Progress'].includes(c.status) && !c.is_escalated) {
+      const priority = c.priorityLevel || c.priority || 'Medium';
+      const limitHours = SLA_LIMITS[priority] || 168;
+      
+      const elapsedMs = Date.now() - new Date(c.createdAt || c.submitted_at).getTime();
+      const elapsedHours = elapsedMs / (1000 * 60 * 60);
+      
+      if (elapsedHours >= limitHours) {
+        c.is_escalated = true;
+        changed = true;
+        
+        // Elevate priority
+        const levelUp = {
+          "Low": "Medium",
+          "Medium": "High",
+          "High": "Critical",
+          "Critical": "Critical"
+        }[priority] || "Critical";
+        
+        c.priority = levelUp;
+        c.priorityLevel = levelUp;
+        
+        // Create notifications
+        const supervisorMsg = `Grievance Ticket #${c.id} has exceeded its SLA of ${limitHours} hours and has been escalated.`;
+        createLocalNotification(c.id, c.citizenPhone, supervisorMsg, 'escalation');
+        
+        const citizenMsg = `Your grievance Ticket #${c.id} has been escalated to senior supervisor review due to resolution delay.`;
+        createLocalNotification(c.id, c.citizenPhone, citizenMsg, 'escalation');
+      }
+    }
+    return c;
+  });
+  
+  return { updated, changed };
+};
+
+const calculateLocalPriority = (description, address, category, createdAt, status, aiResult, allComplaints, isEscalated = false) => {
   const safetyVal = aiResult.severity || aiResult.safetyRisk || "Medium";
   const safetyScore = CONFIG_PRIORITY.safetyRiskMap[safetyVal] !== undefined ? CONFIG_PRIORITY.safetyRiskMap[safetyVal] : 15;
 
@@ -346,13 +454,16 @@ const calculateLocalPriority = (description, address, category, createdAt, statu
   }
 
   let timePendingScore = 0;
-  if (status !== "Resolved" && createdAt) {
+  if (status !== "Resolved" && status !== "Closed" && createdAt) {
     const elapsedMs = Date.now() - new Date(createdAt).getTime();
     const elapsedHours = elapsedMs / (1000 * 60 * 60);
     timePendingScore = Math.min(CONFIG_PRIORITY.weights.timePending, Math.floor(elapsedHours / 24));
   }
 
-  const totalScore = safetyScore + impactScore + essentialScore + urgencyScore + duplicatesScore + locationScore + timePendingScore;
+  // SLA Escalation Boost (+20 pts)
+  const escalationScore = isEscalated ? 20 : 0;
+
+  const totalScore = safetyScore + impactScore + essentialScore + urgencyScore + duplicatesScore + locationScore + timePendingScore + escalationScore;
   const finalScore = Math.max(0, Math.min(100, totalScore));
 
   let level = "Medium";
@@ -366,6 +477,7 @@ const calculateLocalPriority = (description, address, category, createdAt, statu
   if (essentialVal) reasons.push("disruption to essential services");
   if (duplicatesScore > 0) reasons.push(`linked to multiple similar reports (${duplicateCount} duplicate(s) detected)`);
   if (locationScore > 0) reasons.push("near critical public location/infrastructure");
+  if (isEscalated) reasons.push("SLA breach escalation boost");
 
   const reason = reasons.length > 0 
     ? `Complaint prioritized due to: ${reasons.join(", and ")}.`
@@ -381,7 +493,8 @@ const calculateLocalPriority = (description, address, category, createdAt, statu
       urgency: urgencyScore,
       duplicates: duplicatesScore,
       location: locationScore,
-      timePending: timePendingScore
+      timePending: timePendingScore,
+      escalationBoost: escalationScore
     },
     reason
   };
@@ -399,8 +512,12 @@ const _readAll = () => {
       list = JSON.parse(raw);
     }
     
-    // Automatically recalculate priorities on read to keep pending times / duplicate counts fresh
-    let changed = false;
+    // 1. Run local SLA checks first
+    const slaRes = checkLocalSLAsAndEscalate(list);
+    list = slaRes.updated;
+    let changed = slaRes.changed;
+    
+    // 2. Automatically recalculate priorities on read to keep pending times / duplicate counts fresh
     const updated = list.map(c => {
       const p = calculateLocalPriority(
         c.description || "",
@@ -417,10 +534,11 @@ const _readAll = () => {
           priority: c.priority,
           department: c.department
         },
-        list.filter(other => other.id !== c.id)
+        list.filter(other => other.id !== c.id),
+        !!c.is_escalated
       );
       
-      if (c.priorityScore !== p.priorityScore || c.priorityLevel !== p.priorityLevel) {
+      if (c.priorityScore !== p.priorityScore || c.priorityLevel !== p.priorityLevel || c.is_escalated !== c.is_escalated) {
         changed = true;
         return {
           ...c,
@@ -586,13 +704,70 @@ export const updateComplaint = async (id, data) => {
   const idx = all.findIndex((c) => c.id.toLowerCase() === id.toLowerCase());
   if (idx === -1) throw new Error(`Complaint ${id} not found.`);
 
-  all[idx] = { 
-    ...all[idx], 
+  const oldRecord = all[idx];
+  const newRecord = { 
+    ...oldRecord, 
     ...data, 
     updatedAt: new Date().toISOString() 
   };
+  
+  // Check if status changed
+  if (data.status && data.status !== oldRecord.status) {
+    const msg = `Your grievance Ticket #${id} status has been updated to '${data.status}'.`;
+    createLocalNotification(id, oldRecord.citizenPhone, msg, "status_change");
+    
+    if (data.status === "In Progress" && ["Resolved", "Closed"].includes(oldRecord.status)) {
+      newRecord.is_escalated = false;
+      const officerMsg = `[OFFICER ALERT] Complaint #${id} has been REOPENED by the citizen. Please resume resolution immediately.`;
+      console.log(`\n=================== [LOCAL OFFICER ALERT] ===================`);
+      console.log(`[*] Dispatching reopen alert to Officer: ${oldRecord.assigned_officer || 'Officer Sharma'}`);
+      console.log(`[ALERT Message]: "${officerMsg}"`);
+      console.log(`=============================================================\n`);
+    }
+  }
+
+  all[idx] = newRecord;
   _writeAll(all);
   return all[idx];
+};
+
+/**
+ * Confirms resolution of a complaint, saves rating/feedback, and changes status to Closed.
+ * @param {string} id
+ * @param {number} rating
+ * @param {string} feedback
+ * @returns {Promise<Object>} Updated complaint record
+ */
+export const confirmResolution = async (id, rating, feedback) => {
+  try {
+    const res = await axios.post(`${API_URL}/complaints/${id}/confirm-resolution`, { rating, feedback });
+    return res.data;
+  } catch (err) {
+    console.warn("[Resolution] Backend offline or error. Confirming locally:", err);
+    await new Promise((r) => setTimeout(r, 200));
+    
+    const all = _readAll();
+    const idx = all.findIndex((c) => c.id.toLowerCase() === id.toLowerCase());
+    if (idx === -1) throw new Error(`Complaint ${id} not found.`);
+    
+    const c = all[idx];
+    all[idx] = {
+      ...c,
+      status: 'Closed',
+      rating: rating,
+      feedback: feedback,
+      is_escalated: false,
+      updatedAt: new Date().toISOString()
+    };
+    
+    _writeAll(all);
+    
+    // Create local notification
+    const msg = `Thank you for confirming resolution for Ticket #${id}. Your feedback and ${rating}-star rating have been recorded.`;
+    createLocalNotification(id, c.citizenPhone, msg, "feedback");
+    
+    return all[idx];
+  }
 };
 
 /**

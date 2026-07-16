@@ -27,10 +27,11 @@ import {
   ShieldQuestion,
   Loader2,
   BarChart2,
-  Zap
+  Zap,
+  Star
 } from 'lucide-react';
 
-const STATUS_OPTIONS = ['Submitted', 'Assigned', 'In Progress', 'Resolved'];
+const STATUS_OPTIONS = ['Submitted', 'Assigned', 'In Progress', 'Resolved', 'Closed'];
 const DEPARTMENTS = [
   'Roads',
   'Water Supply',
@@ -353,6 +354,11 @@ function AdminPanel() {
                       <span className="font-mono font-bold text-sky-400 text-xs">{c.id}</span>
                       
                       <div className="flex items-center gap-1.5">
+                        {c.is_escalated && (
+                          <span className="bg-rose-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded border border-rose-500 uppercase tracking-wider animate-pulse">
+                            Escalated
+                          </span>
+                        )}
                         <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${
                           c.priorityLevel === 'Critical' || c.priority === 'Critical' ? 'bg-red-500/10 text-red-400 border-red-500/15' :
                           c.priorityLevel === 'High' || c.priority === 'High' ? 'bg-orange-500/10 text-orange-400 border-orange-500/15' :
@@ -362,6 +368,7 @@ function AdminPanel() {
                           {c.priorityLevel || c.priority || 'Medium'} ({c.priorityScore || 0})
                         </span>
                         <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded ${
+                          c.status === 'Closed' ? 'bg-emerald-950/40 text-emerald-500 border border-emerald-500/20 font-bold' :
                           c.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15' :
                           c.status === 'In Progress' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/15' :
                           c.status === 'Assigned' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/15' :
@@ -398,12 +405,14 @@ function AdminPanel() {
                     </div>
                     <div className="flex gap-2">
                       <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase border ${
+                        selectedComplaint.status === 'Closed' ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/25' :
                         selectedComplaint.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
                         selectedComplaint.status === 'In Progress' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
                         selectedComplaint.status === 'Assigned' ? 'bg-sky-500/10 text-sky-400 border-sky-500/20' :
                         'bg-slate-800 text-slate-400 border-slate-700'
                       }`}>
-                        <span className={`w-1 h-1 rounded-full ${
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          selectedComplaint.status === 'Closed' ? 'bg-emerald-400' :
                           selectedComplaint.status === 'Resolved' ? 'bg-emerald-400' :
                           selectedComplaint.status === 'In Progress' ? 'bg-amber-400' :
                           selectedComplaint.status === 'Assigned' ? 'bg-sky-400' :
@@ -413,6 +422,19 @@ function AdminPanel() {
                       </span>
                     </div>
                   </div>
+
+                  {/* SLA Escalation alert banner */}
+                  {selectedComplaint.is_escalated && (
+                    <div className="bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl p-4 flex items-start gap-3 mt-4 text-left">
+                      <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 animate-pulse" />
+                      <div className="space-y-0.5">
+                        <h4 className="text-xs font-bold uppercase tracking-wide">SLA Breached - Grievance Escalated</h4>
+                        <p className="text-[10px] text-slate-400 leading-normal">
+                          This complaint has breached its standard SLA response duration. A priority points boost (+20 pts) has been applied automatically, and a supervisor review warning has been generated.
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Citizen Contact Details row */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs mt-6">
@@ -614,6 +636,35 @@ function AdminPanel() {
                       {selectedComplaint.description}
                     </div>
                   </div>
+
+                  {/* Closed Feedback Display */}
+                  {selectedComplaint.status === 'Closed' && selectedComplaint.rating && (
+                    <div className="bg-slate-950 border border-emerald-500/10 rounded-xl p-4 text-xs space-y-2 mt-4 text-left">
+                      <span className="text-[9px] text-emerald-450 font-bold uppercase tracking-wider block border-b border-emerald-500/10 pb-1">
+                        Citizen Feedback & Satisfaction Review
+                      </span>
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <span className="text-slate-400">Rating:</span>
+                        <div className="flex gap-0.5">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <Star
+                              key={star}
+                              className={`w-3.5 h-3.5 ${
+                                star <= selectedComplaint.rating
+                                  ? 'text-amber-450 fill-amber-450'
+                                  : 'text-slate-800'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      {selectedComplaint.feedback && (
+                        <p className="text-slate-300 italic mt-1 leading-relaxed">
+                          "{selectedComplaint.feedback}"
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Evidence image (data-URL stored on submission) */}

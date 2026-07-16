@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
 from app.database.db import get_db, Base, engine
 from app.routes.complaint_routes import router as complaint_router
+from app.models.notification import Notification
 
 # Autogenerate database tables defined in sqlalchemy models mapping on boot
 try:
@@ -13,6 +14,29 @@ try:
     print("Database tables synchronized successfully.")
 except Exception as err:
     print(f"Error running database synchronization: {err}")
+
+# Check and add missing columns to complaints table
+try:
+    with engine.connect() as conn:
+        result = conn.execute(text("SHOW COLUMNS FROM complaints"))
+        columns = [row[0] for row in result.fetchall()]
+        
+        # Alter table to add missing fields if they don't exist
+        if "is_escalated" not in columns:
+            conn.execute(text("ALTER TABLE complaints ADD COLUMN is_escalated TINYINT(1) DEFAULT 0"))
+            print("Database migration: Added is_escalated column to complaints table.")
+        if "rating" not in columns:
+            conn.execute(text("ALTER TABLE complaints ADD COLUMN rating INT DEFAULT NULL"))
+            print("Database migration: Added rating column to complaints table.")
+        if "feedback" not in columns:
+            conn.execute(text("ALTER TABLE complaints ADD COLUMN feedback TEXT DEFAULT NULL"))
+            print("Database migration: Added feedback column to complaints table.")
+        if "assigned_officer" not in columns:
+            conn.execute(text("ALTER TABLE complaints ADD COLUMN assigned_officer VARCHAR(100) DEFAULT 'Officer Sharma'"))
+            print("Database migration: Added assigned_officer column to complaints table.")
+        conn.commit()
+except Exception as e:
+    print(f"Error checking/adding missing columns: {e}")
 
 app = FastAPI(
     title="AI-Powered Grievance Lodging & Tracking System API",

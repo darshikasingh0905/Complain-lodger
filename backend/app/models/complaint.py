@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Enum, JSON
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Enum, JSON, Boolean
 from app.database.db import Base
 
 class Complaint(Base):
@@ -29,6 +29,12 @@ class Complaint(Base):
     priorityScore = Column(Integer, nullable=True, default=0)
     priorityLevel = Column(String(20), nullable=True, default="Medium")
     priorityBreakdown = Column(JSON, nullable=True)
+    is_escalated = Column(Boolean, nullable=True, default=False)
+
+    # Resolution Confirmation Rating/Feedback
+    rating = Column(Integer, nullable=True)
+    feedback = Column(Text, nullable=True)
+    assigned_officer = Column(String(100), nullable=True, default="Officer Sharma")
 
     # Evidence Audit Fields (filled by Vision LLM)
     evidence_verdict = Column(String(20), nullable=True)  # MATCH, MISMATCH, UNCERTAIN
@@ -63,6 +69,10 @@ class Complaint(Base):
             "priorityScore": self.priorityScore,
             "priorityLevel": self.priorityLevel,
             "priorityBreakdown": self.priorityBreakdown,
+            "is_escalated": self.is_escalated,
+            "rating": self.rating,
+            "feedback": self.feedback,
+            "assigned_officer": self.assigned_officer,
             "evidence_verdict": self.evidence_verdict,
             "evidence_reason": self.evidence_reason,
             "evidence_confidence": self.evidence_confidence,

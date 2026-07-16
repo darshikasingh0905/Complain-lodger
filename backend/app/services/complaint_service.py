@@ -1,9 +1,10 @@
 from typing import List, Optional
+from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from app.models.complaint import Complaint
 from app.schemas.complaint import ComplaintCreate, ComplaintStatusUpdate, ComplaintAIUpdate
-from app.services import ai_service, ai_classifier, priority_engine
+from app.services import ai_service, ai_classifier, priority_engine, notification_service
 
 def recalculate_complaint_priority(db: Session, complaint_id: int, ai_result: dict = None) -> Optional[Complaint]:
     """Helper to recalculate priority parameters using the rule-based engine."""
@@ -35,7 +36,8 @@ def recalculate_complaint_priority(db: Session, complaint_id: int, ai_result: di
         category=db_obj.category or "",
         created_at=db_obj.created_at,
         status=db_obj.status or "Submitted",
-        ai_metadata=ai_metadata
+        ai_metadata=ai_metadata,
+        is_escalated=bool(db_obj.is_escalated)
     )
     
     db_obj.priorityScore = res["priorityScore"]
@@ -62,10 +64,62 @@ def update_all_related_priorities(db: Session, category: str, address: str):
     except Exception as e:
         print(f"[Complaint Service] Error updating related priorities: {e}")
 
+def check_sla_and_escalate(db: Session):
+    """
+    Checks all complaints in Assigned or In Progress states against their SLA limits.
+    Escalates them if they exceed the duration limit.
+    """
+    try:
+        # SLA hour limits based on priority
+        SLA_LIMITS = {
+            "Critical": 24,
+            "High": 72,      # 3 days
+            "Medium": 168,   # 7 days
+            "Low": 336       # 14 days
+        }
+        
+        # Look for complaints in Assigned or In Progress
+        complaints = db.query(Complaint).filter(
+            Complaint.status.in_(["Assigned", "In Progress"]),
+            or_(Complaint.is_escalated == False, Complaint.is_escalated == None)
+        ).all()
+        
+        for c in complaints:
+            if not c.created_at:
+                continue
+                
+            priority = c.priorityLevel or c.priority or "Medium"
+            limit_hours = SLA_LIMITS.get(priority, 168)
+            
+            elapsed_hours = (datetime.now() - c.created_at).total_seconds() / 3600
+            
+            if elapsed_hours >= limit_hours:
+                # Escalation trigger!
+                c.is_escalated = True
+                print(f"[SLA Checker] Escalation triggered for Complaint #{c.id} ({priority} priority, pending {elapsed_hours:.1f} hours, limit {limit_hours} hours).")
+                
+                # Notify supervisor and citizen
+                escalation_msg = f"Grievance Ticket #{c.id} has exceeded its SLA of {limit_hours} hours and has been escalated."
+                notification_service.create_notification(db, c.id, c.citizen_phone, escalation_msg, "escalation")
+                
+                citizen_msg = f"Your grievance Ticket #{c.id} has been escalated to senior supervisor review due to resolution delay."
+                notification_service.create_notification(db, c.id, c.citizen_phone, citizen_msg, "escalation")
+                
+                db.commit()
+                # Recalculate priority with the new escalation boost
+                recalculate_complaint_priority(db, c.id)
+                
+    except Exception as e:
+        print(f"[SLA Checker] Error during SLA escalation run: {e}")
+
 def refresh_pending_times(db: Session):
     """Refresh priorities for all active/pending complaints to reflect elapsed time pending."""
     try:
-        unresolved = db.query(Complaint).filter(Complaint.status != "Resolved").all()
+        # 1. First run the SLA escalator check
+        check_sla_and_escalate(db)
+        
+        # 2. Then recalculate other unresolved complaints
+        unresolved = db.query(Complaint).filter(Complaint.status.in_(["Submitted", "Assigned", "In Progress"])).all()
         for c in unresolved:
             recalculate_complaint_priority(db, c.id)
     except Exception as e:
@@ -171,13 +225,55 @@ def update_complaint_status(db: Session, complaint_id: int, status: str) -> Opti
     db_obj = db.query(Complaint).filter(Complaint.id == complaint_id).first()
     if not db_obj:
         return None
+        
+    old_status = db_obj.status
     db_obj.status = status
+    
+    # If reopened, reset escalation status
+    if status == "In Progress" and old_status in ["Resolved", "Closed"]:
+        db_obj.is_escalated = False
+        
+        # Notify assigned officer
+        officer_msg = f"[OFFICER ALERT] Complaint #{db_obj.id} has been REOPENED by the citizen. Please resume resolution immediately."
+        print(f"\n=================== [OFFICER MOCK NOTIFICATION] ===================")
+        print(f"[*] Dispatching internal alert to Assigned Officer: {db_obj.assigned_officer or 'Officer Sharma'}")
+        print(f"[ALERT Message]: \"{officer_msg}\"")
+        print(f"===================================================================\n")
+        
     db.commit()
     db.refresh(db_obj)
+    
+    # Create notification for status change
+    msg = f"Your grievance Ticket #{complaint_id} status has been updated to '{status}'."
+    notification_service.create_notification(db, complaint_id, db_obj.citizen_phone, msg, "status_change")
     
     # Trigger priority update since status changed (e.g. resolved or reopened)
     recalculate_complaint_priority(db, complaint_id)
     # Recalculate duplicate counts for others
+    update_all_related_priorities(db, db_obj.category, db_obj.address)
+    
+    return db_obj
+
+def confirm_complaint_resolution(db: Session, complaint_id: int, rating: int, feedback: str = None) -> Optional[Complaint]:
+    """Confirms complaint resolution, registers feedback & rating, and closes ticket."""
+    db_obj = db.query(Complaint).filter(Complaint.id == complaint_id).first()
+    if not db_obj:
+        return None
+        
+    db_obj.status = "Closed"
+    db_obj.rating = rating
+    db_obj.feedback = feedback
+    db_obj.is_escalated = False
+    db.commit()
+    db.refresh(db_obj)
+    
+    # Send notification
+    msg = f"Thank you for confirming resolution for Ticket #{complaint_id}. Your feedback and {rating}-star rating have been recorded."
+    notification_service.create_notification(db, complaint_id, db_obj.citizen_phone, msg, "feedback")
+    
+    # Trigger priority update
+    recalculate_complaint_priority(db, complaint_id)
+    # Recalculate duplicate counts
     update_all_related_priorities(db, db_obj.category, db_obj.address)
     
     return db_obj

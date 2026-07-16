@@ -7,7 +7,13 @@ import { useComplaints } from '../context/ComplaintContext';
 export const CitizenDashboard = () => {
   const { userData, logout } = useAuth();
   const navigate = useNavigate();
-  const { complaints } = useComplaints();
+  const { complaints, notifications, fetchNotifications, markAsRead } = useComplaints();
+
+  React.useEffect(() => {
+    if (userData?.mobile) {
+      fetchNotifications(userData.mobile);
+    }
+  }, [userData, fetchNotifications]);
 
   const myCitizenId = userData?.aadhaar || '';
   const recentComplaints = complaints
@@ -89,6 +95,54 @@ export const CitizenDashboard = () => {
             <div className="flex items-start gap-1.5 p-2 bg-emerald-500/5 text-emerald-450 border border-emerald-500/10 rounded-lg text-[10px] text-emerald-400 font-bold leading-normal">
               <BadgeInfo className="w-4 h-4 shrink-0 mt-0.5" />
               <span>Aadhaar Identity successfully verified via E-KYC node.</span>
+            </div>
+
+            {/* Alerts & Notifications tray */}
+            <div className="pt-4 border-t border-white/5 space-y-3 text-left">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">
+                  Alerts & Inbox
+                </span>
+                {notifications.filter(n => !n.is_read).length > 0 && (
+                  <span className="bg-sky-500 text-white font-mono text-[9px] font-black px-1.5 py-0.5 rounded-full shrink-0 flex items-center justify-center gap-0.5 animate-pulse">
+                    <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                    {notifications.filter(n => !n.is_read).length} new
+                  </span>
+                )}
+              </div>
+              
+              {notifications.length === 0 ? (
+                <div className="bg-slate-900/40 p-3.5 rounded-xl border border-white/5 text-center text-slate-500 text-[10px] italic">
+                  No alerts received.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {notifications.map((notif) => (
+                    <div
+                      key={notif.id}
+                      className={`p-3 rounded-xl border transition-all text-[11px] leading-relaxed flex flex-col gap-2 relative group ${
+                        notif.is_read
+                          ? 'bg-slate-900/20 border-white/5 text-slate-450'
+                          : 'bg-sky-950/20 border-sky-500/15 text-slate-200 shadow-sm shadow-sky-500/5'
+                      }`}
+                    >
+                      <p className="font-medium">{notif.message}</p>
+                      
+                      <div className="flex justify-between items-center text-[9px] text-slate-500 font-bold border-t border-slate-900/40 pt-1.5 mt-0.5">
+                        <span>{new Date(notif.created_at).toLocaleDateString()}</span>
+                        {!notif.is_read && (
+                          <button
+                            onClick={() => markAsRead(notif.id)}
+                            className="text-sky-400 hover:text-sky-300 font-black uppercase tracking-wider cursor-pointer"
+                          >
+                            Mark Read
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

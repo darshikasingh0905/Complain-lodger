@@ -6,6 +6,9 @@ import {
   deleteComplaint,
   classifyComplaintAI,
   auditEvidenceAI,
+  getNotifications,
+  markNotificationAsRead,
+  confirmResolution,
 } from '../services/complaintService';
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -15,12 +18,49 @@ const ComplaintContext = createContext(null);
 export const ComplaintProvider = ({ children }) => {
   const [complaints, setComplaints] = useState([]);
   const [loadingComplaints, setLoadingComplaints] = useState(true);
+  const [notifications, setNotifications] = useState([]);
 
   // Load all complaints from localStorage on mount
   useEffect(() => {
     getComplaints()
       .then(setComplaints)
       .finally(() => setLoadingComplaints(false));
+  }, []);
+
+  /**
+   * Fetch active notifications for a citizen phone.
+   */
+  const fetchNotifications = useCallback(async (phone) => {
+    if (!phone) return [];
+    try {
+      const data = await getNotifications(phone);
+      setNotifications(data);
+      return data;
+    } catch (e) {
+      console.error(e);
+      return [];
+    }
+  }, []);
+
+  /**
+   * Mark a notification as read.
+   */
+  const markAsRead = useCallback(async (id) => {
+    try {
+      await markNotificationAsRead(id);
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  /**
+   * Confirm complaint resolution with rating/feedback
+   */
+  const confirmComplaintResolution = useCallback(async (id, rating, feedback) => {
+    const updated = await confirmResolution(id, rating, feedback);
+    setComplaints((prev) => prev.map((c) => (c.id.toLowerCase() === id.toLowerCase() ? updated : c)));
+    return updated;
   }, []);
 
   /**
@@ -88,6 +128,10 @@ export const ComplaintProvider = ({ children }) => {
   const value = {
     complaints,
     loadingComplaints,
+    notifications,
+    fetchNotifications,
+    markAsRead,
+    confirmComplaintResolution,
     addComplaint,
     updateStatus,
     updateComplaint: updateComplaintData,

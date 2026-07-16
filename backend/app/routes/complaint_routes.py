@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from app.database.db import get_db
-from app.schemas.complaint import ComplaintCreate, ComplaintResponse, ComplaintStatusUpdate, ComplaintAIUpdate, EvidenceAuditResult
+from app.schemas.complaint import ComplaintCreate, ComplaintResponse, ComplaintStatusUpdate, ComplaintAIUpdate, EvidenceAuditResult, ConfirmResolutionRequest
 import app.services.complaint_service as service
 from app.services import ai_service
 
@@ -275,4 +275,57 @@ def get_complaint_trends(db: Session = Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch chronological analytics data: {str(e)}"
         )
+
+@router.get("/notifications/{phone}", response_model=List[dict])
+def get_citizen_notifications(phone: str, db: Session = Depends(get_db)):
+    """
+    Retrieves all notifications for a specific citizen by registered phone number.
+    """
+    from app.models.notification import Notification
+    notifications = (
+        db.query(Notification)
+        .filter(Notification.citizen_phone == phone)
+        .order_by(Notification.created_at.desc())
+        .all()
+    )
+    return [n.to_dict() for n in notifications]
+
+@router.patch("/notifications/{notification_id}/read", response_model=dict)
+def mark_notification_as_read(notification_id: int, db: Session = Depends(get_db)):
+    """
+    Marks a notification as read.
+    """
+    from app.models.notification import Notification
+    n = db.query(Notification).filter(Notification.id == notification_id).first()
+    if not n:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Notification with ID {notification_id} not found."
+        )
+    n.is_read = True
+    db.commit()
+    return {"status": "success", "id": notification_id}
+
+@router.post("/{complaint_id}/confirm-resolution", response_model=ComplaintResponse)
+def confirm_resolution(
+    complaint_id: int,
+    payload: ConfirmResolutionRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Confirms a resolved complaint, logs the citizen's rating & feedback, and shifts the status to Closed.
+    """
+    updated = service.confirm_complaint_resolution(
+        db,
+        complaint_id,
+        rating=payload.rating,
+        feedback=payload.feedback
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Complaint with ID {complaint_id} does not exist"
+        )
+    return updated
+
 
