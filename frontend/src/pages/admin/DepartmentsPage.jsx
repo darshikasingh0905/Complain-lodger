@@ -54,7 +54,7 @@ export default function DepartmentsPage() {
   }, [complaints]);
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 animate-fade-in">
+    <div className="w-full space-y-8 animate-fade-in">
       <PageHeader
         eyebrow="Administration"
         icon={Building2}

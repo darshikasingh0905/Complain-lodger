@@ -189,7 +189,7 @@ export default function AnalyticsDashboard() {
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-8 animate-fade-in">
+    <div className="w-full space-y-8 animate-fade-in">
       {/* ── Page header ── */}
       <PageHeader
         eyebrow="Predictive Engine"

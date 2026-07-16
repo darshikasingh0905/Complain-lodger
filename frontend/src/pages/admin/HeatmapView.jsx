@@ -144,7 +144,7 @@ export default function HeatmapView() {
   const defaultZoom = 5;
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-4 animate-fade-in">
+    <div className="w-full space-y-4 animate-fade-in">
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
