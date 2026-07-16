@@ -47,8 +47,12 @@ const DEPARTMENTS = [
 ];
 
 function AdminPanel() {
-  const { complaints, loadingComplaints, updateStatus, reclassifyComplaint, auditEvidence } = useComplaints();
+  const { complaints, loadingComplaints, updateStatus, reclassifyComplaint, auditEvidence, adminRole, adminDepartment } = useComplaints();
   const [selectedComplaint, setSelectedComplaint] = useState(null);
+
+  const isSuperAdmin = adminRole === 'super_admin' || !adminRole;
+  const isDeptAdmin = adminRole === 'department_admin';
+  const deptLabel = adminDepartment ? adminDepartment.replace(' Department', '') : null;
 
   const location = useLocation();
   const searchParams = React.useMemo(() => new URLSearchParams(location.search), [location.search]);
@@ -180,29 +184,46 @@ function AdminPanel() {
     <div className="max-w-7xl mx-auto w-full px-4 pb-12 space-y-6">
       
       {/* Admin Tab Bar */}
-      <div className="flex items-center gap-2 bg-slate-900/60 p-1.5 rounded-2xl border border-white/5 w-fit">
-        {[
-          { id: 'complaints', label: 'Grievance List', icon: FileText },
-          { id: 'analytics', label: 'Predictive Analytics', icon: BarChart2 },
-          { id: 'heatmap', label: 'Hotspot Heatmap', icon: MapPin }
-        ].map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
-                isActive
-                  ? 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-lg shadow-sky-600/10'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              {tab.label}
-            </button>
-          );
-        })}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+        {/* Dashboard Title badge */}
+        <div className="flex items-center gap-2">
+          {isDeptAdmin ? (
+            <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600/20 to-sky-600/20 border border-indigo-500/30 rounded-2xl">
+              <FolderDot className="w-4 h-4 text-indigo-400" />
+              <span className="text-sm font-black text-white">{deptLabel} Department Dashboard</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-sky-600/20 to-violet-600/20 border border-sky-500/30 rounded-2xl">
+              <LayoutDashboard className="w-4 h-4 text-sky-400" />
+              <span className="text-sm font-black text-white">Super Admin — All Departments</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 bg-slate-900/60 p-1.5 rounded-2xl border border-white/5 w-fit">
+          {[
+            { id: 'complaints', label: 'Grievance List', icon: FileText },
+            { id: 'analytics', label: 'Analytics', icon: BarChart2 },
+            { id: 'heatmap', label: 'Heatmap', icon: MapPin }
+          ].map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+                  isActive
+                    ? 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-lg shadow-sky-600/10'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {activeTab === 'complaints' && (
@@ -246,10 +267,12 @@ function AdminPanel() {
           <div className="text-left">
             <h2 className="text-xl font-black text-white flex items-center gap-2">
               <LayoutDashboard className="w-5 h-5 text-sky-400" />
-              Administrative Dashboard
+              {isDeptAdmin ? `${deptLabel || 'Department'} Grievance Management` : 'Administrative Dashboard'}
             </h2>
             <p className="text-slate-400 text-xs mt-0.5">
-              Review, filter, and manage all filed grievances. Update status to track resolution progress.
+              {isDeptAdmin
+                ? `Showing only ${deptLabel} Department complaints. Update status to track resolution progress.`
+                : 'Review, filter, and manage all filed grievances across all departments.'}
             </p>
           </div>
         </div>
@@ -272,6 +295,7 @@ function AdminPanel() {
             </div>
           </div>
 
+          {isSuperAdmin && (
           <div className="md:col-span-2">
             <label className="block text-[9px] font-extrabold uppercase tracking-widest text-slate-500 mb-1.5">
               Department
@@ -290,6 +314,7 @@ function AdminPanel() {
               </select>
             </div>
           </div>
+          )}
 
           <div className="md:col-span-2">
             <label className="block text-[9px] font-extrabold uppercase tracking-widest text-slate-500 mb-1.5">

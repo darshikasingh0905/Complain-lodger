@@ -10,11 +10,63 @@ const DEMO_CITIZENS = [
   }
 ];
 
+// Super admin + 6 department admins (hackathon demo accounts)
 const DEMO_ADMINS = [
   {
     username: "admin",
+    email: "admin@admin.com",
     password: "admin123",
-    name: "System Administrator"
+    name: "System Administrator",
+    role: "super_admin",
+    department: null
+  },
+  {
+    username: "admin@roads.com",
+    email: "admin@roads.com",
+    password: "admin123",
+    name: "Roads Department Admin",
+    role: "department_admin",
+    department: "Roads"
+  },
+  {
+    username: "admin@electricity.com",
+    email: "admin@electricity.com",
+    password: "admin123",
+    name: "Electricity Department Admin",
+    role: "department_admin",
+    department: "Electricity"
+  },
+  {
+    username: "admin@water.com",
+    email: "admin@water.com",
+    password: "admin123",
+    name: "Water Supply Department Admin",
+    role: "department_admin",
+    department: "Water Supply"
+  },
+  {
+    username: "admin@garbage.com",
+    email: "admin@garbage.com",
+    password: "admin123",
+    name: "Sanitation Department Admin",
+    role: "department_admin",
+    department: "Sanitation"
+  },
+  {
+    username: "admin@health.com",
+    email: "admin@health.com",
+    password: "admin123",
+    name: "Health Department Admin",
+    role: "department_admin",
+    department: "Health"
+  },
+  {
+    username: "admin@transport.com",
+    email: "admin@transport.com",
+    password: "admin123",
+    name: "Transport Department Admin",
+    role: "department_admin",
+    department: "Public Transport"
   }
 ];
 
@@ -47,7 +99,32 @@ export const initLocalStorageData = () => {
     }
   }
 
-  if (!localStorage.getItem('admins')) {
+  // Always merge demo admin accounts (so dept accounts are available even with old sessions)
+  try {
+    const stored = localStorage.getItem('admins');
+    const existing = stored ? JSON.parse(stored) : [];
+    let changed = false;
+    const merged = [...existing];
+    for (const demo of DEMO_ADMINS) {
+      const found = merged.find(
+        a => a.username.toLowerCase() === demo.username.toLowerCase()
+      );
+      if (!found) {
+        merged.push(demo);
+        changed = true;
+      } else {
+        // Patch role/department fields if missing on existing record
+        if (!found.role || !found.department !== undefined) {
+          Object.assign(found, { role: demo.role, department: demo.department });
+          changed = true;
+        }
+      }
+    }
+    if (changed || !stored) {
+      localStorage.setItem('admins', JSON.stringify(merged));
+    }
+  } catch (e) {
+    console.warn("Admin account merge failed:", e);
     localStorage.setItem('admins', JSON.stringify(DEMO_ADMINS));
   }
 };

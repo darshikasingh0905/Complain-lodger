@@ -571,12 +571,24 @@ const _writeAll = (records) => {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Get all complaints.
+ * Get all complaints, optionally filtered by admin role & department.
+ * @param {string|null} adminRole - 'super_admin' | 'department_admin' | null
+ * @param {string|null} adminDepartment - e.g. 'Roads', 'Electricity'
  * @returns {Promise<Array>}
  */
-export const getComplaints = async () => {
+export const getComplaints = async (adminRole = null, adminDepartment = null) => {
   await new Promise((r) => setTimeout(r, 60));
-  return _readAll();
+  const all = _readAll();
+  // If department_admin with a set department, return only their complaints
+  if (adminRole === 'department_admin' && adminDepartment) {
+    return all.filter((c) => {
+      const dept = (c.department || '').toLowerCase();
+      const target = adminDepartment.toLowerCase();
+      // Match department field which may have " Department" suffix or not
+      return dept === target || dept.startsWith(target) || dept.includes(target) || target.includes(dept.replace(' department', '').trim());
+    });
+  }
+  return all;
 };
 
 /**

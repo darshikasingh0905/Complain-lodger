@@ -10,6 +10,7 @@ import {
   markNotificationAsRead,
   confirmResolution,
 } from '../services/complaintService';
+import { getCurrentSessionUser } from '../utils/localStorageHelpers';
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 const ComplaintContext = createContext(null);
@@ -20,12 +21,18 @@ export const ComplaintProvider = ({ children }) => {
   const [loadingComplaints, setLoadingComplaints] = useState(true);
   const [notifications, setNotifications] = useState([]);
 
-  // Load all complaints from localStorage on mount
+  // Derive admin role from session (no hook dependency — runs at module level)
+  const session = getCurrentSessionUser();
+  const adminRole = session?.adminRole || session?.user?.adminRole || null;
+  const adminDepartment = session?.adminDepartment || session?.user?.adminDepartment || null;
+
+  // Load all complaints from backend on mount; filter by dept if department_admin
   useEffect(() => {
-    getComplaints()
+    getComplaints(adminRole, adminDepartment)
       .then(setComplaints)
       .finally(() => setLoadingComplaints(false));
   }, []);
+
 
   /**
    * Fetch active notifications for a citizen phone.
@@ -118,17 +125,19 @@ export const ComplaintProvider = ({ children }) => {
   }, []);
 
   /**
-   * Force re-read all complaints from localStorage.
+   * Force re-read all complaints from backend (respects dept filter).
    */
   const refreshComplaints = useCallback(async () => {
-    const all = await getComplaints();
+    const all = await getComplaints(adminRole, adminDepartment);
     setComplaints(all);
-  }, []);
+  }, [adminRole, adminDepartment]);
 
   const value = {
     complaints,
     loadingComplaints,
     notifications,
+    adminRole,
+    adminDepartment,
     fetchNotifications,
     markAsRead,
     confirmComplaintResolution,

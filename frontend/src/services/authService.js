@@ -86,9 +86,14 @@ export const authService = {
     const sessionPayload = {
       isAuthenticated: true,
       role: 'admin',
+      adminRole: adminMatch.role || 'super_admin',
+      adminDepartment: adminMatch.department || null,
       user: {
         username: adminMatch.username,
-        name: adminMatch.name
+        name: adminMatch.name,
+        email: adminMatch.email || adminMatch.username,
+        adminRole: adminMatch.role || 'super_admin',
+        adminDepartment: adminMatch.department || null,
       }
     };
 
