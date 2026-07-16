@@ -8,6 +8,7 @@ import {
 import { AuthProvider } from "./context/AuthContext";
 import { ComplaintProvider } from "./context/ComplaintContext";
 import { SafetyModeProvider } from "./context/SafetyModeContext";
+import { LanguageProvider } from "./context/LanguageContext";
 import RoleGuard from "./components/guards/RoleGuard";
 import SuperAdminGuard from "./components/guards/SuperAdminGuard";
 
@@ -15,9 +16,11 @@ import SuperAdminGuard from "./components/guards/SuperAdminGuard";
 import Navbar from "./components/layout/Navbar";
 import OfflineBanner from "./components/layout/OfflineBanner";
 import CitizenTour from "./components/tour/CitizenTour";
+import ChatbotWidget from "./components/chat/ChatbotWidget";
 
 // Public / auth pages
 import LoginChoice from "./pages/auth/LoginChoice";
+import Scoreboard from "./pages/public/Scoreboard";
 import CitizenLogin from "./pages/auth/CitizenLogin";
 import AdminLogin from "./pages/auth/AdminLogin";
 import OTPVerification from "./pages/auth/OTPVerification";
@@ -40,6 +43,7 @@ import SettingsPage from "./pages/admin/SettingsPage";
 function App() {
   return (
     <AuthProvider>
+      <LanguageProvider>
       <SafetyModeProvider>
       <ComplaintProvider>
         <Router>
@@ -47,10 +51,12 @@ function App() {
             <Navbar />
             <OfflineBanner />
             <CitizenTour />
+            <ChatbotWidget />
 
             <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-8">
               <Routes>
                 {/* Public / auth routes */}
+                <Route path="/scoreboard" element={<Scoreboard />} />
                 <Route path="/login" element={<LoginChoice />} />
                 <Route path="/login/citizen" element={<CitizenLogin />} />
                 <Route path="/login/admin" element={<AdminLogin />} />
@@ -177,6 +183,7 @@ function App() {
         </Router>
       </ComplaintProvider>
       </SafetyModeProvider>
+      </LanguageProvider>
     </AuthProvider>
   );
 }

@@ -15,17 +15,22 @@ import {
   Users,
   Settings,
   HeartHandshake,
+  Trophy,
+  Globe,
 } from "lucide-react";
 
 import useAuth from "../../hooks/useAuth";
 import { useSafetyMode } from "../../context/SafetyModeContext";
+import { useLanguage } from "../../context/LanguageContext";
 import NotificationBell from "./NotificationBell";
 
+// Labels are i18n keys — resolved through t() at render time.
 const CITIZEN_NAV = [
-  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/", label: "Lodge Grievance", icon: PlusCircle },
-  { path: "/track", label: "Track Status", icon: Search },
-  { path: "/safety", label: "Safety", icon: ShieldAlert },
+  { path: "/dashboard", label: "nav.dashboard", icon: LayoutDashboard },
+  { path: "/", label: "nav.lodge", icon: PlusCircle },
+  { path: "/track", label: "nav.track", icon: Search },
+  { path: "/safety", label: "nav.safety", icon: ShieldAlert },
+  { path: "/scoreboard", label: "nav.scoreboard", icon: Trophy },
 ];
 
 const ADMIN_NAV = [
@@ -48,6 +53,7 @@ function Navbar() {
   const navigate = useNavigate();
   const { isAuthenticated, userRole, userData, logout } = useAuth();
   const { safetyMode, toggleSafetyMode } = useSafetyMode();
+  const { language, setLanguage, t, LANGUAGES } = useLanguage();
 
   const currentPath = location.pathname;
 
@@ -79,16 +85,36 @@ function Navbar() {
         </div>
         <div className="hidden sm:block">
           <div className="text-base font-bold text-text leading-tight">
-            Grievance Portal
+            {t("nav.portal")}
           </div>
           <div className="text-[10px] uppercase tracking-wider font-medium text-muted">
-            Smart Governance System
+            {t("nav.tagline")}
           </div>
         </div>
       </Link>
 
       {/* Navigation + user */}
       <div className="flex items-center gap-3">
+        {/* Site language picker — a government portal must not assume English */}
+        <label
+          className="flex items-center gap-1.5 bg-surface border border-border rounded-lg px-2 py-1.5 cursor-pointer"
+          title="Change website language"
+        >
+          <Globe className="w-4 h-4 text-primary shrink-0" />
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            aria-label="Website language"
+            className="bg-transparent text-xs font-semibold text-text outline-none cursor-pointer"
+          >
+            {LANGUAGES.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
         {isAuthenticated ? (
           <>
             <div className="hidden md:flex items-center gap-1 bg-surfaceSoft border border-border p-1 rounded-lg">
@@ -106,7 +132,7 @@ function Navbar() {
                     }`}
                   >
                     <Icon className="w-4 h-4" />
-                    <span>{item.label}</span>
+                    <span>{t(item.label) !== item.label ? t(item.label) : item.label}</span>
                   </Link>
                 );
               })}
@@ -135,7 +161,7 @@ function Navbar() {
                 }`}
               >
                 <HeartHandshake className="w-4 h-4 shrink-0" />
-                <span className="hidden sm:inline">Women Safety</span>
+                <span className="hidden sm:inline">{t("nav.womenSafety")}</span>
                 <span
                   className={`w-8 h-4.5 h-[18px] rounded-full relative transition-colors duration-300 ${
                     safetyMode ? "bg-white/30" : "bg-border"
@@ -158,7 +184,7 @@ function Navbar() {
                 <div className="text-[10px] text-muted uppercase font-semibold">
                   {userRole === "admin" && userData?.adminRole === "department_admin"
                     ? userData?.department || "Dept. Admin"
-                    : "Signed in"}
+                    : t("nav.signedIn")}
                 </div>
                 <div className="text-xs font-semibold text-text">
                   {userData?.name || "User"}
@@ -179,11 +205,20 @@ function Navbar() {
             </div>
           </>
         ) : (
-          currentPath !== "/login" && (
-            <Link to="/login" className="btn-primary">
-              Sign In
-            </Link>
-          )
+          <>
+            {/* Public accountability scoreboard — visible without login */}
+            {currentPath !== "/scoreboard" && (
+              <Link to="/scoreboard" className="btn-ghost !px-3 text-xs">
+                <Trophy className="w-4 h-4" />
+                <span className="hidden sm:inline">{t("nav.scoreboard")}</span>
+              </Link>
+            )}
+            {currentPath !== "/login" && (
+              <Link to="/login" className="btn-primary">
+                {t("nav.signin")}
+              </Link>
+            )}
+          </>
         )}
       </div>
     </nav>

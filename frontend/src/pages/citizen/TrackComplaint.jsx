@@ -26,12 +26,13 @@ import {
   MessageCircle,
 } from "lucide-react";
 import { useComplaints } from "../../context/ComplaintContext";
+import { useLanguage } from "../../context/LanguageContext";
 import useAuth from "../../hooks/useAuth";
 import { useNavigate } from "react-router-dom";
-import { StatusBadge, PriorityBadge } from "../../components/ui/Badge";
+import { StatusBadge, PriorityBadge, SafetyBadge } from "../../components/ui/Badge";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { SkeletonListItem, SkeletonCard } from "../../components/ui/Skeleton";
-import { PRIORITY_COLORS, SLA_LIMITS } from "../../constants";
+import { PRIORITY_COLORS, SLA_LIMITS, SAFETY_PINK, isSafetyComplaint } from "../../constants";
 import { formatDate } from "../../utils/format";
 
 /**
@@ -97,6 +98,7 @@ function StarRating({ value, onChange, readOnly = false }) {
 function TrackComplaint() {
   const navigate = useNavigate();
   const { userData } = useAuth();
+  const { t } = useLanguage();
   const { complaints, loadingComplaints, confirmResolution, updateStatus } = useComplaints();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -178,19 +180,16 @@ function TrackComplaint() {
   const activeIdx = current ? activeStepIdx(current.status) : 0;
 
   return (
-    <div className="max-w-6xl mx-auto w-full pb-12 space-y-6 animate-fade-in">
+    <div className="w-full pb-12 space-y-6 animate-fade-in">
       {/* ── Header + search ── */}
       <div className="card relative overflow-hidden" data-tour="track-page">
         <div className="absolute top-0 left-0 w-full h-1 bg-primary" />
         <div className="mb-5">
           <h1 className="text-xl md:text-2xl font-bold text-text flex items-center gap-2">
             <Activity className="w-6 h-6 text-primary" />
-            Track My Grievances
+            {t("track.title")}
           </h1>
-          <p className="text-muted text-sm mt-1">
-            All your submitted complaints are listed below. Click a complaint to
-            see the full timeline.
-          </p>
+          <p className="text-muted text-sm mt-1">{t("track.subtitle")}</p>
         </div>
 
         <div className="relative">
@@ -199,7 +198,7 @@ function TrackComplaint() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by Complaint ID, title, or area…"
+            placeholder={t("track.search")}
             className="input pl-11 py-3"
           />
         </div>
@@ -224,8 +223,8 @@ function TrackComplaint() {
         <div className="card max-w-md mx-auto">
           <EmptyState
             icon={ClipboardList}
-            title="No complaints yet"
-            description="You have not submitted any grievances. Lodge a complaint to get started."
+            title={t("track.none")}
+            description={t("track.noneDesc")}
             action={
               <button onClick={() => navigate("/")} className="btn-primary">
                 <PlusCircle className="w-4 h-4" />
@@ -253,15 +252,17 @@ function TrackComplaint() {
           {/* Left: complaint list */}
           <div className="w-full lg:w-80 shrink-0 space-y-3">
             <h3 className="text-xs font-bold uppercase tracking-wider text-muted px-1">
-              Your Complaints ({filtered.length})
+              {t("track.yours")} ({filtered.length})
             </h3>
             <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
               {filtered.map((c) => {
                 const isSelected = current?.id === c.id;
+                const safety = isSafetyComplaint(c);
                 return (
                   <button
                     key={c.id}
                     onClick={() => setSelectedComplaint(c)}
+                    style={safety ? { borderLeft: `3px solid ${SAFETY_PINK}` } : undefined}
                     className={`w-full p-4 rounded-card border text-left cursor-pointer transition-all flex flex-col gap-1.5 ${
                       isSelected
                         ? "bg-primary-light border-primary/40 shadow-card"
@@ -273,6 +274,7 @@ function TrackComplaint() {
                         {c.id}
                       </span>
                       <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                        {safety && <SafetyBadge compact />}
                         <PriorityBadge
                           level={c.priorityLevel || c.priority}
                           score={c.priorityScore ?? null}
@@ -298,7 +300,7 @@ function TrackComplaint() {
               {/* Timeline */}
               <div className="card md:col-span-5 h-full">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-muted mb-6 border-b border-border pb-3">
-                  Resolution Timeline
+                  {t("track.timeline")}
                 </h3>
                 <div className="relative space-y-6 before:absolute before:left-5 before:top-2 before:bottom-2 before:w-[2px] before:bg-border">
                   {STATUS_STEPS.map((step, idx) => {
@@ -351,6 +353,7 @@ function TrackComplaint() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {isSafetyComplaint(current) && <SafetyBadge />}
                     {current.is_escalated && (
                       <span className="badge-error">
                         <ShieldAlert className="w-3 h-3" />
@@ -426,6 +429,49 @@ function TrackComplaint() {
                       Rate the resolution to close this ticket, or reopen it if the
                       issue still persists.
                     </p>
+
+                    {/* AI-verified fix proof (before/after audit) */}
+                    {current.fixImageFullUrl && (
+                      <div className="rounded-lg border border-status-success-border bg-surface p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                            Fix proof — verified by AI
+                          </span>
+                          {current.fix_verdict && (
+                            <span
+                              className={
+                                current.fix_verdict === "FIXED"
+                                  ? "badge-success !text-[10px]"
+                                  : current.fix_verdict === "NOT_FIXED"
+                                    ? "badge-error !text-[10px]"
+                                    : "badge-warning !text-[10px]"
+                              }
+                            >
+                              {current.fix_verdict}
+                              {current.fix_confidence != null &&
+                                ` · ${Math.round(current.fix_confidence * 100)}%`}
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(current.imagePreview || current.imageFullUrl) && (
+                            <img
+                              src={current.imagePreview || current.imageFullUrl}
+                              alt="Before"
+                              className="w-full h-24 object-cover rounded-md border border-border"
+                            />
+                          )}
+                          <img
+                            src={current.fixImageFullUrl}
+                            alt="After fix"
+                            className="w-full h-24 object-cover rounded-md border border-border"
+                          />
+                        </div>
+                        {current.fix_reason && (
+                          <p className="text-[11px] text-muted italic">"{current.fix_reason}"</p>
+                        )}
+                      </div>
+                    )}
 
                     {actionError && (
                       <p className="text-xs text-status-error-text font-medium flex items-center gap-1">

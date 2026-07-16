@@ -13,8 +13,10 @@ import {
   HandHelping,
 } from "lucide-react";
 import { useSafetyMode } from "../../context/SafetyModeContext";
+import { useLanguage } from "../../context/LanguageContext";
 import { useComplaints } from "../../context/ComplaintContext";
-import { StatusBadge, PriorityBadge } from "../../components/ui/Badge";
+import { StatusBadge, PriorityBadge, SafetyBadge } from "../../components/ui/Badge";
+import { SAFETY_PINK } from "../../constants";
 import { PageHeader } from "../../components/ui/PageHeader";
 
 /**
@@ -79,6 +81,7 @@ const SAFETY_DEPTS = ["Police", "Women Safety Cell"];
 export default function SafetyPage() {
   const navigate = useNavigate();
   const { safetyMode, toggleSafetyMode } = useSafetyMode();
+  const { t } = useLanguage();
   const { complaints } = useComplaints();
 
   // Recent safety reports across the community (both cells)
@@ -97,11 +100,11 @@ export default function SafetyPage() {
     });
 
   return (
-    <div className="max-w-6xl mx-auto w-full space-y-6 animate-fade-in">
+    <div className="w-full space-y-6 animate-fade-in">
       <PageHeader
         eyebrow="Community Safety"
         icon={Shield}
-        title="Safety Center"
+        title={t("safety.title")}
         description="Report anything that makes your neighbourhood feel unsafe — for everyone. Safety complaints receive a dedicated priority boost so they're acted on first."
       />
 
@@ -119,7 +122,7 @@ export default function SafetyPage() {
             </div>
             <div className="min-w-0">
               <h2 className="font-bold text-text flex items-center gap-2 flex-wrap">
-                Women Safety Mode
+                {t("safety.womenMode")}
                 {safetyMode && <span className="badge-primary !text-[10px]">Active</span>}
               </h2>
               <p className="text-xs text-muted mt-1 leading-relaxed max-w-xl">
@@ -161,7 +164,7 @@ export default function SafetyPage() {
       <section className="card">
         <div className="card-header">
           <div>
-            <h2 className="section-title">Report a Safety Issue</h2>
+            <h2 className="section-title">{t("safety.report")}</h2>
             <p className="section-description">
               One tap starts a pre-filled complaint — add the location and details, done.
             </p>
@@ -202,7 +205,7 @@ export default function SafetyPage() {
         {/* Helplines */}
         <div className="mt-5 pt-4 border-t border-border flex flex-wrap items-center gap-x-6 gap-y-2">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted">
-            In immediate danger? Call now
+            {t("safety.helplines")}
           </span>
           {HELPLINES.map((h) => (
             <a
@@ -232,6 +235,7 @@ export default function SafetyPage() {
             {safetyComplaints.map((c) => (
               <div
                 key={c.id}
+                style={{ borderLeft: `3px solid ${SAFETY_PINK}` }}
                 className="w-full flex items-center justify-between gap-4 p-4 rounded-lg inset-panel"
               >
                 <div className="min-w-0">
@@ -240,6 +244,7 @@ export default function SafetyPage() {
                   <p className="text-xs text-muted truncate">{c.area}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  <SafetyBadge compact />
                   <PriorityBadge level={c.priorityLevel || c.priority} score={c.priorityScore ?? null} />
                   <StatusBadge status={c.status} />
                 </div>
