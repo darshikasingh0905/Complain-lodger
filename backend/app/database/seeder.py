@@ -2,11 +2,59 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.models.complaint import Complaint
 
+# Topic-relevant evidence photo per seeded complaint (files in app/uploads/).
+# These make the demo's vision features real: the intake audit can verify a
+# MATCH, and the fix-verification has a genuine BEFORE image to compare.
+SEED_IMAGES = {
+    "Water pipeline leakage": "uploads/dc206255-7339-4a74-b1c8-e16d1f4367f0.jpg",   # water flooding street
+    "Street light not functioning": "uploads/seed_darkstreet.jpg",                  # pitch-dark lane at night
+    "Potholes on main road": "uploads/seed_pothole.jpg",
+    "Garbage dumping on roadside": "uploads/seed_garbage.jpg",
+    "Mosquito breeding in stagnant water": "uploads/6809c16c-5f4c-46b0-a745-3f643dbb9929.jpg",  # stagnant water
+    "Open garbage burning causing smoke": "uploads/seed_burning.jpg",
+    "Broken traffic signal causing daily jams": "uploads/seed_signal.jpg",
+    "Illegal parking blocking ambulance route": "uploads/seed_parking.jpg",
+    "Transformer sparking near school gate": "uploads/seed_transformer.jpg",
+    "Frequent power cuts every evening": "uploads/seed_transformer.jpg",
+    "No water supply for three days": "uploads/seed_drytap.jpg",
+    "Contaminated drinking water": "uploads/seed_drytap.jpg",
+    "Blocked drain overflowing sewage onto street": "uploads/dc206255-7339-4a74-b1c8-e16d1f4367f0.jpg",
+    "Community dustbins overflowing for a week": "uploads/seed_dustbin.jpg",
+    "Harassment near bus stop after dark": "uploads/seed_darkstreet.jpg",
+    "Chain snatching on poorly lit lane": "uploads/seed_darkstreet.jpg",
+    "Stalking incidents near college gate": "uploads/seed_darkstreet.jpg",
+    "Mobile snatching at vegetable market": "uploads/seed_market.jpg",
+    "Nightly fights outside liquor shop": "uploads/seed_darkstreet.jpg",
+}
+
+
+def backfill_seed_images(db: Session):
+    """
+    Attach evidence photos to already-seeded complaints missing one (existing
+    databases don't re-seed). Matches by exact seeded title, so user-created
+    complaints are never touched.
+    """
+    updated = 0
+    for title, image_url in SEED_IMAGES.items():
+        rows = (
+            db.query(Complaint)
+            .filter(Complaint.title == title, Complaint.image_url.is_(None))
+            .all()
+        )
+        for r in rows:
+            r.image_url = image_url
+            updated += 1
+    if updated:
+        db.commit()
+        print(f"[Database Seeder] Backfilled evidence images on {updated} seeded complaints.")
+
+
 def seed_database_if_empty(db: Session):
     count = db.query(Complaint).count()
     if count > 0:
+        backfill_seed_images(db)
         return
-        
+
     print("[Database Seeder] Seeding database with initial complaints...")
     
     now = datetime.now()
@@ -419,6 +467,10 @@ def seed_database_if_empty(db: Session):
             created_at=now - timedelta(days=2, hours=6), updated_at=now - timedelta(days=1),
         ),
     ]
+
+    # Attach the topic-relevant evidence photo to every seeded complaint
+    for s in seeds:
+        s.image_url = SEED_IMAGES.get(s.title, s.image_url)
 
     db.add_all(seeds)
     db.commit()
