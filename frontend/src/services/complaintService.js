@@ -1,703 +1,265 @@
-import axios from 'axios';
+// ─────────────────────────────────────────────────────────────────────────────
+// Complaint service — API-first with offline fallback.
+//
+// Primary path:   FastAPI backend  (VITE_API_URL, default http://localhost:8000/api)
+// Fallback path:  localStorage simulation (localComplaintStore.js), used only
+//                 when the backend is unreachable so the demo never breaks.
+// ─────────────────────────────────────────────────────────────────────────────
+import axios from "axios";
+import {
+  localGetComplaints,
+  localCreateComplaint,
+  localUpdateStatus,
+  localConfirmResolution,
+  localClassify,
+  localAuditEvidence,
+} from "./localComplaintStore";
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-const COMPLAINTS_KEY = 'complaints';
+export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+export const BACKEND_URL = API_URL.replace(/\/api\/?$/, "");
 
-// ─── Seed Data ────────────────────────────────────────────────────────────────
-const SEED_COMPLAINTS = [
-  {
-    id: "CMP-0001",
-    citizenId: "123456789012",
-    citizenName: "Demo Citizen",
-    citizenPhone: "9876543210",
-    citizenEmail: "citizen@example.com",
-    citizenAddress: "123 MG Road, Pune, Maharashtra - 411001",
-    title: "Water pipeline leakage",
-    description: "There is a massive water pipeline leakage near Shivaji Nagar bus stand. Millions of liters of clean water are being wasted. Please address this urgently.",
-    area: "Shivaji Nagar Bus Stand, Pune",
-    landmark: "Near Bus Stand",
-    pinCode: "411005",
-    department: "Water Supply Department",
-    category: "Water Leakage / Deficit",
-    priority: "Critical",
-    ai_severity: "Critical",
-    ai_confidence: 0.95,
-    ai_reason: "Complaint mentions massive pipeline leakage wasting millions of liters.",
-    ai_keywords: ["water", "pipeline", "leakage"],
-    status: "In Progress",
-    imagePreview: null,
-    latitude: 18.5312,
-    longitude: 73.8445,
-    priorityScore: 82,
-    priorityLevel: "Critical",
-    priorityBreakdown: { safetyRisk: 30, publicImpact: 20, essentialService: 20, urgency: 10, duplicates: 0, location: 5, timePending: 2 },
-    priorityReason: "Complaint prioritized due to: a safety risk flagged as Critical, and disruption to essential services, and near critical public location/infrastructure.",
-    createdAt: "2026-07-12T10:30:00.000Z",
-    submitted_at: "2026-07-12T10:30:00.000Z",
-    updatedAt: "2026-07-13T14:20:00.000Z"
-  },
-  {
-    id: "CMP-0002",
-    citizenId: "123456789012",
-    citizenName: "Demo Citizen",
-    citizenPhone: "9876543210",
-    citizenEmail: "citizen@example.com",
-    citizenAddress: "123 MG Road, Pune, Maharashtra - 411001",
-    title: "Street light not functioning",
-    description: "Three street lights are completely dark on the lane opposite to D-Mart. It is unsafe for women and children to walk at night.",
-    area: "Kothrud, Pune",
-    landmark: "Opposite D-Mart",
-    pinCode: "411038",
-    department: "Electricity Department",
-    category: "Power Issue",
-    priority: "High",
-    ai_severity: "Moderate",
-    ai_confidence: 0.88,
-    ai_reason: "Dark road reported causing unsafe walking conditions.",
-    ai_keywords: ["street light", "dark road"],
-    status: "Submitted",
-    imagePreview: null,
-    latitude: 18.5074,
-    longitude: 73.8077,
-    priorityScore: 55,
-    priorityLevel: "Medium",
-    priorityBreakdown: { safetyRisk: 15, publicImpact: 10, essentialService: 20, urgency: 5, duplicates: 0, location: 0, timePending: 2 },
-    priorityReason: "Complaint prioritized due to: disruption to essential services.",
-    createdAt: "2026-07-14T18:45:00.000Z",
-    submitted_at: "2026-07-14T18:45:00.000Z",
-    updatedAt: "2026-07-14T18:45:00.000Z"
-  },
-  {
-    id: "CMP-0003",
-    citizenId: "999999999999",
-    citizenName: "Aarav Sharma",
-    citizenPhone: "9876500000",
-    citizenEmail: "aarav@example.com",
-    citizenAddress: "Flat 402, Rohan Heights, Pune",
-    title: "Potholes on main road",
-    description: "Severe potholes on the main road causing vehicular damage and potential accidents. They have become very deep after the rain.",
-    area: "Viman Nagar, Pune",
-    landmark: "Near Phoenix Mall",
-    pinCode: "411014",
-    department: "Roads and Drainage",
-    category: "Water Logging and Road Damage",
-    priority: "High",
-    ai_severity: "Critical",
-    ai_confidence: 0.92,
-    ai_reason: "Deep potholes causing immediate road danger and vehicle damage.",
-    ai_keywords: ["potholes", "road", "vehicular damage"],
-    status: "Assigned",
-    imagePreview: null,
-    latitude: 18.5679,
-    longitude: 73.9143,
-    priorityScore: 73,
-    priorityLevel: "High",
-    priorityBreakdown: { safetyRisk: 30, publicImpact: 20, essentialService: 0, urgency: 10, duplicates: 5, location: 5, timePending: 3 },
-    priorityReason: "Complaint prioritized due to: a safety risk flagged as Critical, and linked to multiple similar reports, and near critical public location/infrastructure.",
-    createdAt: "2026-07-15T09:15:00.000Z",
-    submitted_at: "2026-07-15T09:15:00.000Z",
-    updatedAt: "2026-07-15T11:00:00.000Z"
-  },
-  {
-    id: "CMP-0004",
-    citizenId: "888888888888",
-    citizenName: "Priya Patel",
-    citizenPhone: "9876511111",
-    citizenEmail: "priya@example.com",
-    citizenAddress: "Row House 7, Sun City, Pune",
-    title: "Garbage dumping on roadside",
-    description: "Large garbage dump has accumulated on the roadside. It emits foul smell and attracts stray dogs/insects.",
-    area: "Hadapsar, Pune",
-    landmark: "Near Noble Hospital",
-    pinCode: "411028",
-    department: "Solid Waste Management",
-    category: "Garbage Accumulation",
-    priority: "Low",
-    ai_severity: "Minor",
-    ai_confidence: 0.90,
-    ai_reason: "Roadside garbage accumulation attracting stray animals.",
-    ai_keywords: ["garbage", "dump", "roadside"],
-    status: "Resolved",
-    imagePreview: null,
-    latitude: 18.5089,
-    longitude: 73.9258,
-    priorityScore: 22,
-    priorityLevel: "Low",
-    priorityBreakdown: { safetyRisk: 5, publicImpact: 5, essentialService: 0, urgency: 2, duplicates: 5, location: 5, timePending: 0 },
-    priorityReason: "Complaint classified with general parameters. Priority level: Low.",
-    createdAt: "2026-07-10T08:00:00.000Z",
-    submitted_at: "2026-07-10T08:00:00.000Z",
-    updatedAt: "2026-07-12T16:30:00.000Z"
-  }
-];
+const http = axios.create({ baseURL: API_URL, timeout: 20000 });
 
-// ─── AI Keyword Classification Rules ──────────────────────────────────────────
-const DEPT_KEYWORDS = {
-  "Roads and Drainage": [
-    "pothole", "road", "highway", "street", "pavement", "crater",
-    "bump", "broken road", "repair road", "asphalt", "divider",
-    "footpath", "sidewalk", "carriageway", "drainage", "drain",
-    "sewage", "overflow", "waterlogging", "flood", "nala",
-    "blocked drain", "gutter", "manhole", "overflowing"
-  ],
-  "Electricity Department": [
-    "electricity", "power", "electric", "wire", "transformer",
-    "outage", "blackout", "no power", "current", "meter",
-    "short circuit", "sparking", "tripping", "voltage"
-  ],
-  "Water Supply Department": [
-    "water", "pipe", "leakage", "leak", "tap", "supply", "shortage",
-    "no water", "water cut", "drinking water", "nal", "pipeline",
-    "contaminated water", "murky water"
-  ],
-  "Solid Waste Management": [
-    "garbage", "waste", "trash", "rubbish", "litter", "dump",
-    "sweeping", "cleanliness", "filth", "smell", "dustbin", "landfill"
-  ],
-  "Public Health": [
-    "health", "medical", "epidemic", "disease", "dengue", "malaria",
-    "mosquito", "clinic", "hospital", "hygiene", "sanitation", "open defecation"
-  ],
-  "Traffic Police": [
-    "traffic", "signal", "zebra crossing", "parking", "jam",
-    "vehicle", "fine", "congestion", "speeding", "one way"
-  ],
-  "Pollution Control Board": [
-    "pollution", "smoke", "dust", "air quality", "chemical",
-    "factory emission", "noise", "loud speaker", "sound pollution"
-  ],
-  "Parks and Gardens": [
-    "park", "garden", "tree", "grass", "branch", "municipal park", "green belt"
-  ],
-  "Fire Department": [
-    "fire", "smoke", "burn", "explosion", "cylinder blast", "rescue"
-  ],
-  "Municipal Corporation": [
-    "tax", "building permission", "birth certificate", "death certificate",
-    "encroachment", "hawkers", "license", "shop act"
-  ],
-  "Women Safety Cell": [
-    "harassment", "unsafe", "women safety", "eve teasing", "stalking", "abuse"
-  ],
-  "Cyber Crime": [
-    "cyber", "online fraud", "scam", "phishing", "hacked", "password",
-    "hack", "spam", "bank fraud", "credit card fraud"
-  ],
-  "Police": [
-    "theft", "robbery", "fight", "police", "crime", "law and order",
-    "brawl", "kidnap", "assault"
-  ],
-  "Animal Control": [
-    "stray dog", "cattle", "monkey menace", "animal bite", "rabies", "pig", "stray"
-  ]
-};
+// ─── Online / offline detection ───────────────────────────────────────────────
 
-const PRIORITY_KEYWORDS = {
-  "High": [
-    "urgent", "emergency", "danger", "dangerous", "immediate",
-    "critical", "accident", "injury", "death", "fire", "electrocute",
-    "collapse", "flood", "severe", "major", "fatal", "risk"
-  ],
-  "Low": [
-    "minor", "small", "slight", "little", "cosmetic", "tiny",
-    "not urgent", "eventually", "whenever possible"
-  ],
-};
+let apiOnline = null; // null = unknown, true/false = probed
 
-const CATEGORY_MAP = {
-  "Roads and Drainage": "Water Logging and Road Damage",
-  "Electricity Department": "Power Issue",
-  "Water Supply Department": "Water Leakage / Deficit",
-  "Solid Waste Management": "Garbage Accumulation",
-  "Public Health": "Mosquito Breeding / Unhygienic Site",
-  "Traffic Police": "Traffic Congestion",
-  "Pollution Control Board": "Air / Noise Pollution",
-  "Parks and Gardens": "Park Maintenance",
-  "Fire Department": "Fire Hazard",
-  "Municipal Corporation": "Property Tax / Regulation",
-  "Women Safety Cell": "Eve Teasing / Unsafe Spot",
-  "Cyber Crime": "Cyber Scam / Account Hack",
-  "Police": "Public Nuisance / Theft",
-  "Animal Control": "Stray Animal Menace",
-  "Other": "General Grievance"
-};
-
-// Local fallback classifier matching backend rules
-const runLocalClassification = (title, description) => {
-  const text = (title + " " + description).toLowerCase();
-
-  const deptScores = {};
-  Object.keys(DEPT_KEYWORDS).forEach(dept => {
-    deptScores[dept] = 0;
-    DEPT_KEYWORDS[dept].forEach(kw => {
-      if (text.includes(kw)) {
-        deptScores[dept]++;
-      }
-    });
-  });
-
-  let bestDept = "Other";
-  let maxScore = 0;
-  Object.keys(deptScores).forEach(dept => {
-    if (deptScores[dept] > maxScore) {
-      maxScore = deptScores[dept];
-      bestDept = dept;
-    }
-  });
-
-  const category = CATEGORY_MAP[bestDept] || "General Grievance";
-
-  let priority = "Medium";
-  for (const level of Object.keys(PRIORITY_KEYWORDS)) {
-    if (PRIORITY_KEYWORDS[level].some(kw => text.includes(kw))) {
-      priority = level;
-      break;
-    }
-  }
-
-  const severity = priority === "High" ? "Critical" : priority === "Low" ? "Minor" : "Moderate";
-
-  const foundKeywords = [];
-  Object.values(DEPT_KEYWORDS).forEach(list => {
-    list.forEach(kw => {
-      if (text.includes(kw) && !foundKeywords.includes(kw)) {
-        foundKeywords.push(kw);
-      }
-    });
-  });
-
-  return {
-    department: bestDept,
-    category: category,
-    priority: priority,
-    severity: severity,
-    confidence: 0.0,
-    reason: "Ollama offline or API error. Local keyword fallback was applied.",
-    keywords: foundKeywords.slice(0, 5)
-  };
-};
-
-// ─── ID Generator ─────────────────────────────────────────────────────────────
-const generateId = () => {
+/** Probe backend health once; cached for the session. */
+export const checkApiOnline = async () => {
+  if (apiOnline !== null) return apiOnline;
   try {
-    const existing = JSON.parse(localStorage.getItem(COMPLAINTS_KEY) || '[]');
-    const next = existing.length + 1;
-    return `CMP-${String(next).padStart(4, '0')}`;
+    const res = await axios.get(`${API_URL}/health`, { timeout: 3000 });
+    apiOnline = res.data?.database === "connected";
   } catch {
-    return `CMP-${Date.now()}`;
+    apiOnline = false;
   }
+  return apiOnline;
 };
 
-const CONFIG_PRIORITY = {
-  weights: {
-    safetyRisk: 30,
-    publicImpact: 20,
-    essentialService: 20,
-    urgency: 10,
-    duplicates: 10,
-    location: 5,
-    timePending: 5
-  },
-  safetyRiskMap: {
-    "High": 30,
-    "Critical": 30,
-    "Medium": 15,
-    "Moderate": 15,
-    "Low": 5,
-    "Minor": 5
-  },
-  publicImpactMap: {
-    "High": 20,
-    "Medium": 10,
-    "Low": 5
-  },
-  urgencyMap: {
-    "High": 10,
-    "Medium": 5,
-    "Low": 2
-  },
-  locationKeywords: [
-    "hospital", "clinic", "school", "college", "station", "highway",
-    "market", "airport", "bus stand", "bus stop", "metro", "railway"
-  ]
-};
+export const isApiOnline = () => apiOnline === true;
 
-const calculateLocalPriority = (description, address, category, createdAt, status, aiResult, allComplaints) => {
-  const safetyVal = aiResult.severity || aiResult.safetyRisk || "Medium";
-  const safetyScore = CONFIG_PRIORITY.safetyRiskMap[safetyVal] !== undefined ? CONFIG_PRIORITY.safetyRiskMap[safetyVal] : 15;
+/** Extract the numeric backend id from "CMP-0004" / "4" / 4. */
+export const numericIdOf = (id) => parseInt(String(id).replace(/\D/g, ""), 10);
 
-  const impactVal = aiResult.publicImpact || "Medium";
-  const impactScore = CONFIG_PRIORITY.publicImpactMap[impactVal] !== undefined ? CONFIG_PRIORITY.publicImpactMap[impactVal] : 10;
+const apiError = (err, fallbackMsg) =>
+  new Error(err?.response?.data?.detail || err?.message || fallbackMsg);
 
-  const essentialVal = !!aiResult.essentialService || ["Electricity Department", "Water Supply Department", "Public Health", "Fire Department"].includes(aiResult.department);
-  const essentialScore = essentialVal ? CONFIG_PRIORITY.weights.essentialService : 0;
+// ─── Normalization: backend record → UI shape ─────────────────────────────────
 
-  const urgencyVal = aiResult.urgency || aiResult.priority || "Medium";
-  const urgencyScore = CONFIG_PRIORITY.urgencyMap[urgencyVal] !== undefined ? CONFIG_PRIORITY.urgencyMap[urgencyVal] : 5;
+const toDisplayId = (n) => `CMP-${String(n).padStart(4, "0")}`;
 
-  // Duplicate count
-  const duplicateCount = allComplaints.filter(c => c.category === category && c.area === address).length;
-  const duplicatesScore = Math.min(CONFIG_PRIORITY.weights.duplicates, duplicateCount * 5);
+export const normalizeComplaint = (c) => ({
+  id: toDisplayId(c.id),
+  numericId: c.id,
+  citizenId: c.citizen_phone || "",
+  citizenName: c.citizen_name || "Anonymous",
+  citizenPhone: c.citizen_phone || "",
+  title: c.title || (c.description || "").slice(0, 60),
+  description: c.description || "",
+  area: c.address || "",
+  address: c.address || "",
+  landmark: null,
+  pinCode: null,
+  latitude: c.latitude,
+  longitude: c.longitude,
+  department: c.department || "Other",
+  category: c.category || "General",
+  priority: c.priorityLevel || c.priority || "Medium",
+  ai_severity: c.ai_severity,
+  ai_confidence: c.ai_confidence,
+  ai_reason: c.ai_reason,
+  ai_keywords: c.ai_keywords,
+  ai_summary: c.ai_summary,
+  priorityScore: c.priorityScore ?? 0,
+  priorityLevel: c.priorityLevel || c.priority || "Medium",
+  priorityBreakdown: c.priorityBreakdown || {},
+  priorityReason: c.ai_reason,
+  is_escalated: !!c.is_escalated,
+  rating: c.rating ?? null,
+  feedback: c.feedback ?? null,
+  assigned_officer: c.assigned_officer || null,
+  evidence_verdict: c.evidence_verdict || null,
+  evidence_reason: c.evidence_reason || null,
+  evidence_confidence: c.evidence_confidence ?? null,
+  status: c.status || "Submitted",
+  image_url: c.image_url || null,
+  imageFullUrl: c.image_url ? `${BACKEND_URL}/${c.image_url.replace(/^\//, "")}` : null,
+  imagePreview: null,
+  createdAt: c.created_at,
+  submitted_at: c.created_at,
+  updatedAt: c.updated_at,
+  source: "api",
+});
 
-  let locationScore = 0;
-  const combinedText = `${description} ${address || ""}`.toLowerCase();
-  if (CONFIG_PRIORITY.locationKeywords.some(kw => combinedText.includes(kw))) {
-    locationScore = CONFIG_PRIORITY.weights.location;
-  }
+// ─── Complaints ───────────────────────────────────────────────────────────────
 
-  let timePendingScore = 0;
-  if (status !== "Resolved" && createdAt) {
-    const elapsedMs = Date.now() - new Date(createdAt).getTime();
-    const elapsedHours = elapsedMs / (1000 * 60 * 60);
-    timePendingScore = Math.min(CONFIG_PRIORITY.weights.timePending, Math.floor(elapsedHours / 24));
-  }
-
-  const totalScore = safetyScore + impactScore + essentialScore + urgencyScore + duplicatesScore + locationScore + timePendingScore;
-  const finalScore = Math.max(0, Math.min(100, totalScore));
-
-  let level = "Medium";
-  if (finalScore >= 81) level = "Critical";
-  else if (finalScore >= 61) level = "High";
-  else if (finalScore >= 31) level = "Medium";
-  else level = "Low";
-
-  const reasons = [];
-  if (safetyScore >= 15) reasons.push(`a safety risk flagged as ${safetyVal}`);
-  if (essentialVal) reasons.push("disruption to essential services");
-  if (duplicatesScore > 0) reasons.push(`linked to multiple similar reports (${duplicateCount} duplicate(s) detected)`);
-  if (locationScore > 0) reasons.push("near critical public location/infrastructure");
-
-  const reason = reasons.length > 0 
-    ? `Complaint prioritized due to: ${reasons.join(", and ")}.`
-    : `Complaint classified with general parameters. Priority level: ${level}.`;
-
-  return {
-    priorityScore: finalScore,
-    priorityLevel: level,
-    priorityBreakdown: {
-      safetyRisk: safetyScore,
-      publicImpact: impactScore,
-      essentialService: essentialScore,
-      urgency: urgencyScore,
-      duplicates: duplicatesScore,
-      location: locationScore,
-      timePending: timePendingScore
-    },
-    reason
-  };
-};
-
-// ─── Raw Storage Helpers ──────────────────────────────────────────────────────
-const _readAll = () => {
-  try {
-    const raw = localStorage.getItem(COMPLAINTS_KEY);
-    let list = [];
-    if (!raw) {
-      list = SEED_COMPLAINTS;
-      localStorage.setItem(COMPLAINTS_KEY, JSON.stringify(SEED_COMPLAINTS));
-    } else {
-      list = JSON.parse(raw);
-    }
-    
-    // Automatically recalculate priorities on read to keep pending times / duplicate counts fresh
-    let changed = false;
-    const updated = list.map(c => {
-      const p = calculateLocalPriority(
-        c.description || "",
-        c.area || "",
-        c.category || "",
-        c.createdAt || c.submitted_at,
-        c.status || "Submitted",
-        {
-          severity: c.ai_severity,
-          safetyRisk: c.safetyRisk,
-          publicImpact: c.publicImpact,
-          essentialService: c.essentialService,
-          urgency: c.urgency,
-          priority: c.priority,
-          department: c.department
-        },
-        list.filter(other => other.id !== c.id)
-      );
-      
-      if (c.priorityScore !== p.priorityScore || c.priorityLevel !== p.priorityLevel) {
-        changed = true;
-        return {
-          ...c,
-          priorityScore: p.priorityScore,
-          priorityLevel: p.priorityLevel,
-          priorityBreakdown: p.priorityBreakdown,
-          priorityReason: p.reason,
-          priority: p.priorityLevel,
-          ai_reason: p.reason
-        };
+/**
+ * List complaints. Pass { role: "department_admin", department } to let the
+ * backend scope results to a department admin's jurisdiction.
+ */
+export const getComplaints = async ({ role, department } = {}) => {
+  if (await checkApiOnline()) {
+    try {
+      const params = {};
+      if (role === "department_admin" && department) {
+        params.role = role;
+        params.department = department;
       }
-      return c;
-    });
-    
-    if (changed) {
-      _writeAll(updated);
-      return updated;
+      const res = await http.get("/complaints/", { params });
+      return res.data.map(normalizeComplaint);
+    } catch (err) {
+      console.warn("[complaints] API list failed, using local fallback:", err.message);
     }
-    return list;
-  } catch (e) {
-    console.error("Local storage read error", e);
+  }
+  return localGetComplaints();
+};
+
+/**
+ * Submit a new complaint. API path uses multipart /complaints/submit with the
+ * first evidence image; offline path stores a data-URL preview instead.
+ */
+export const createComplaint = async (payload) => {
+  const { citizen, complaintLocation, complaint, imageFile, imagePreview, latitude, longitude } = payload;
+
+  if (await checkApiOnline()) {
+    const address = [
+      complaintLocation.area,
+      complaintLocation.landmark ? `Near ${complaintLocation.landmark}` : null,
+      complaintLocation.pinCode || null,
+    ]
+      .filter(Boolean)
+      .join(" • ");
+
+    const form = new FormData();
+    form.append("citizen_name", citizen.name || "");
+    form.append("citizen_phone", citizen.mobile || "");
+    form.append("title", complaint.title || "");
+    form.append("description", complaint.description || "");
+    form.append("address", address);
+    if (latitude != null) form.append("latitude", latitude);
+    if (longitude != null) form.append("longitude", longitude);
+    if (imageFile) form.append("image", imageFile);
+
+    try {
+      const res = await http.post("/complaints/submit", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 60000, // classification runs inline on the backend
+      });
+      return normalizeComplaint(res.data);
+    } catch (err) {
+      throw apiError(err, "Submission failed. Please try again.");
+    }
+  }
+
+  return localCreateComplaint({ citizen, complaintLocation, complaint, imagePreview, latitude, longitude });
+};
+
+export const updateComplaintStatus = async (id, newStatus) => {
+  if (isApiOnline()) {
+    try {
+      const res = await http.patch(`/complaints/${numericIdOf(id)}/status`, { status: newStatus });
+      return normalizeComplaint(res.data);
+    } catch (err) {
+      throw apiError(err, "Unable to update complaint status.");
+    }
+  }
+  return localUpdateStatus(id, newStatus);
+};
+
+/** Citizen confirms a resolved complaint: rating (1-5) + feedback → Closed. */
+export const confirmResolution = async (id, rating, feedback) => {
+  if (isApiOnline()) {
+    try {
+      const res = await http.post(`/complaints/${numericIdOf(id)}/confirm-resolution`, {
+        rating,
+        feedback: feedback || null,
+      });
+      return normalizeComplaint(res.data);
+    } catch (err) {
+      throw apiError(err, "Unable to confirm resolution.");
+    }
+  }
+  return localConfirmResolution(id, rating, feedback);
+};
+
+export const classifyComplaintAI = async (id) => {
+  if (isApiOnline()) {
+    try {
+      const res = await http.post(`/complaints/${numericIdOf(id)}/classify`, null, { timeout: 60000 });
+      return normalizeComplaint(res.data);
+    } catch (err) {
+      throw apiError(err, "AI classification failed.");
+    }
+  }
+  return localClassify(id);
+};
+
+export const auditEvidenceAI = async (id) => {
+  if (isApiOnline()) {
+    try {
+      const res = await http.post(`/complaints/${numericIdOf(id)}/analyze-evidence`, null, { timeout: 90000 });
+      return normalizeComplaint(res.data);
+    } catch (err) {
+      throw apiError(err, "Evidence analysis failed.");
+    }
+  }
+  return localAuditEvidence(id);
+};
+
+// ─── Analytics ────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch trends/analytics from the backend.
+ * Returns null when offline — callers compute a local approximation instead.
+ */
+export const getTrends = async ({ role, department } = {}) => {
+  if (!(await checkApiOnline())) return null;
+  try {
+    const params = {};
+    if (role === "department_admin" && department) {
+      params.role = role;
+      params.department = department;
+    }
+    const res = await http.get("/complaints/trends", { params });
+    return res.data;
+  } catch (err) {
+    console.warn("[analytics] trends fetch failed:", err.message);
+    return null;
+  }
+};
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+export const getCitizenNotifications = async (phone) => {
+  if (!phone || !(await checkApiOnline())) return [];
+  try {
+    const res = await http.get(`/complaints/notifications/${phone}`);
+    return res.data;
+  } catch {
     return [];
   }
 };
 
-const _writeAll = (records) => {
-  localStorage.setItem(COMPLAINTS_KEY, JSON.stringify(records));
-};
-
-// ─── Public API ───────────────────────────────────────────────────────────────
-
-/**
- * Get all complaints.
- * @returns {Promise<Array>}
- */
-export const getComplaints = async () => {
-  await new Promise((r) => setTimeout(r, 60));
-  return _readAll();
-};
-
-/**
- * Get a single complaint by its ID string (e.g. "CMP-0001").
- * @param {string} id
- * @returns {Promise<Object|null>}
- */
-export const getComplaintById = async (id) => {
-  await new Promise((r) => setTimeout(r, 60));
-  return _readAll().find((c) => c.id.toLowerCase() === id.toLowerCase()) || null;
-};
-
-/**
- * Get all complaints belonging to a specific citizen (by Aadhaar number).
- * @param {string} citizenId  Aadhaar number
- * @returns {Promise<Array>}
- */
-export const getCitizenComplaints = async (citizenId) => {
-  await new Promise((r) => setTimeout(r, 60));
-  const cleanId = (citizenId || '').replace(/\s+/g, '');
-  return _readAll().filter((c) => (c.citizenId || '').replace(/\s+/g, '') === cleanId);
-};
-
-/**
- * Create and persist a new complaint.
- * Automatically assigns randomized geolocations inside Pune, Maharashtra.
- *
- * @param {Object} payload
- *   citizen         : { name, aadhaar, mobile, email, address }
- *   complaintLocation: { area, landmark, pinCode }
- *   complaint       : { title, description }
- *   imagePreview    : data-URL string | null
- *
- * @returns {Promise<Object>} The saved flat record
- */
-export const createComplaint = async (payload) => {
-  await new Promise((r) => setTimeout(r, 400));
-
-  const { citizen, complaintLocation, complaint, imagePreview } = payload;
-  const now = new Date().toISOString();
-
-  // Generate Pune-bound geolocations if none are provided
-  const latitude = payload.latitude || (18.5204 + (Math.random() - 0.5) * 0.08);
-  const longitude = payload.longitude || (73.8567 + (Math.random() - 0.5) * 0.08);
-
-  // Run AI classification pipeline
-  let ai_result;
+export const getAdminNotifications = async ({ role, department } = {}) => {
+  if (!(await checkApiOnline())) return [];
   try {
-    const res = await axios.post(`${API_URL}/classify`, {
-      title: complaint.title || "",
-      description: complaint.description || "",
-      location: complaintLocation.area || ""
-    });
-    ai_result = res.data;
-  } catch (err) {
-    console.warn("[AI Classifier] Backend offline or error. Using local fallback:", err);
-    ai_result = runLocalClassification(complaint.title || "", complaint.description || "");
+    const params = {};
+    if (role === "department_admin" && department) {
+      params.role = role;
+      params.department = department;
+    }
+    const res = await http.get("/complaints/admin-notifications", { params });
+    return res.data;
+  } catch {
+    return [];
   }
-
-  const existing = _readAll();
-
-  // Calculate local priority
-  const p = calculateLocalPriority(
-    complaint.description || "",
-    complaintLocation.area || "",
-    ai_result.category || "",
-    now,
-    'Submitted',
-    ai_result,
-    existing
-  );
-
-  const record = {
-    id:             generateId(),
-    citizenId:      (citizen.aadhaar || '').replace(/\s+/g, ''),
-    citizenName:    citizen.name    || '',
-    citizenPhone:   citizen.mobile  || '',
-    citizenEmail:   citizen.email   || '',
-    citizenAddress: citizen.address || '',
-    title:          complaint.title,
-    description:    complaint.description,
-    area:           complaintLocation.area,
-    landmark:       complaintLocation.landmark || null,
-    pinCode:        complaintLocation.pinCode  || null,
-    department:     ai_result.department,
-    category:       ai_result.category,
-    priority:       p.priorityLevel,
-    ai_severity:    ai_result.severity,
-    ai_confidence:  ai_result.confidence,
-    ai_reason:      p.reason,
-    ai_keywords:    ai_result.keywords,
-    ai_summary:     ai_result.reason,
-    priorityScore:  p.priorityScore,
-    priorityLevel:  p.priorityLevel,
-    priorityBreakdown: p.priorityBreakdown,
-    priorityReason: p.reason,
-    status:         'Submitted',
-    imagePreview:   imagePreview || null,
-    latitude,
-    longitude,
-    evidence_verdict: null,
-    evidence_reason: null,
-    evidence_confidence: null,
-    createdAt:      now,
-    submitted_at:   now,
-    updatedAt:      now,
-  };
-
-  existing.push(record);
-  _writeAll(existing);
-
-  return record;
 };
 
-/**
- * Update any fields on a complaint by ID.
- * @param {string} id
- * @param {Object} data
- * @returns {Promise<Object>} Updated record
- */
-export const updateComplaint = async (id, data) => {
-  await new Promise((r) => setTimeout(r, 100));
-
-  const all = _readAll();
-  const idx = all.findIndex((c) => c.id.toLowerCase() === id.toLowerCase());
-  if (idx === -1) throw new Error(`Complaint ${id} not found.`);
-
-  all[idx] = { 
-    ...all[idx], 
-    ...data, 
-    updatedAt: new Date().toISOString() 
-  };
-  _writeAll(all);
-  return all[idx];
-};
-
-/**
- * Delete a complaint by ID.
- * @param {string} id
- * @returns {Promise<void>}
- */
-export const deleteComplaint = async (id) => {
-  await new Promise((r) => setTimeout(r, 100));
-  _writeAll(_readAll().filter((c) => c.id.toLowerCase() !== id.toLowerCase()));
-};
-
-// ─── AI Classifier Operations (Offline/Online Support) ──────────────────────
-
-/**
- * Perform AI classification on a complaint description (Re-run classifier).
- * @param {string} id
- * @returns {Promise<Object>} Updated complaint record
- */
-export const classifyComplaintAI = async (id) => {
-  await new Promise((r) => setTimeout(r, 500));
-  const all = _readAll();
-  const idx = all.findIndex((c) => c.id.toLowerCase() === id.toLowerCase());
-  if (idx === -1) throw new Error(`Complaint ${id} not found.`);
-
-  const c = all[idx];
-  let ai_result;
-
+export const markNotificationRead = async (notificationId) => {
+  if (!isApiOnline()) return;
   try {
-    const res = await axios.post(`${API_URL}/classify`, {
-      title: c.title || "",
-      description: c.description || "",
-      location: c.area || ""
-    });
-    ai_result = res.data;
-  } catch (err) {
-    console.warn("[AI Classifier] Backend offline or error. Using local fallback:", err);
-    ai_result = runLocalClassification(c.title || "", c.description || "");
+    await http.patch(`/complaints/notifications/${notificationId}/read`);
+  } catch {
+    /* non-fatal */
   }
-
-  // Calculate local priority
-  const p = calculateLocalPriority(
-    c.description || "",
-    c.area || "",
-    ai_result.category || "",
-    c.createdAt || c.submitted_at,
-    c.status || "Submitted",
-    ai_result,
-    all.filter(other => other.id !== c.id)
-  );
-
-  all[idx] = {
-    ...c,
-    department: ai_result.department,
-    category: ai_result.category,
-    priority: p.priorityLevel,
-    ai_severity: ai_result.severity,
-    ai_confidence: ai_result.confidence,
-    ai_reason: p.reason,
-    ai_keywords: ai_result.keywords,
-    ai_summary: ai_result.reason,
-    priorityScore: p.priorityScore,
-    priorityLevel: p.priorityLevel,
-    priorityBreakdown: p.priorityBreakdown,
-    updatedAt: new Date().toISOString()
-  };
-
-  _writeAll(all);
-  return all[idx];
 };
-
-/**
- * Perform simulated vision model audit on complaint evidence image.
- * @param {string} id
- * @returns {Promise<Object>} Updated complaint record
- */
-export const auditEvidenceAI = async (id) => {
-  await new Promise((r) => setTimeout(r, 600));
-  const all = _readAll();
-  const idx = all.findIndex((c) => c.id.toLowerCase() === id.toLowerCase());
-  if (idx === -1) throw new Error(`Complaint ${id} not found.`);
-
-  const c = all[idx];
-  if (!c.imagePreview && !c.image_url) {
-    throw new Error("This complaint has no attached evidence image to analyze.");
-  }
-
-  const verdict = "MATCH";
-  const reason = "Evidence verified — image matches the complaint description.";
-  const confidence = 0.95;
-
-  all[idx] = {
-    ...c,
-    evidence_verdict: verdict,
-    evidence_reason: reason,
-    evidence_confidence: confidence,
-    updatedAt: new Date().toISOString()
-  };
-
-  _writeAll(all);
-  return all[idx];
-};
-
-export const updateComplaintStatus = async (id, newStatus) => {
-  return updateComplaint(id, { status: newStatus });
-};
-
-export const submitComplaint = createComplaint;

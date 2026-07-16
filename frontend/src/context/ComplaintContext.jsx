@@ -1,114 +1,108 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import {
   getComplaints,
   createComplaint,
-  updateComplaint,
-  deleteComplaint,
+  updateComplaintStatus,
+  confirmResolution as confirmResolutionApi,
   classifyComplaintAI,
   auditEvidenceAI,
-} from '../services/complaintService';
+  checkApiOnline,
+} from "../services/complaintService";
+import useAuth from "../hooks/useAuth";
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 const ComplaintContext = createContext(null);
 
+const sameId = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
+
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export const ComplaintProvider = ({ children }) => {
+  const { userData, userRole } = useAuth();
   const [complaints, setComplaints] = useState([]);
   const [loadingComplaints, setLoadingComplaints] = useState(true);
+  const [apiOnline, setApiOnline] = useState(null);
 
-  // Load all complaints from localStorage on mount
+  const load = useCallback(async () => {
+    // Scope for department admins — the backend filters records server-side.
+    const adminScope =
+      userRole === "admin" && userData?.adminRole === "department_admin"
+        ? { role: "department_admin", department: userData?.department }
+        : {};
+    const online = await checkApiOnline();
+    setApiOnline(online);
+    const all = await getComplaints(adminScope);
+    setComplaints(all);
+  }, [userRole, userData]);
+
+  // (Re)load whenever the signed-in identity changes
   useEffect(() => {
-    getComplaints()
-      .then(setComplaints)
-      .finally(() => setLoadingComplaints(false));
-  }, []);
+    setLoadingComplaints(true);
+    load().finally(() => setLoadingComplaints(false));
+  }, [load]);
 
-  /**
-   * Add a new complaint.
-   * Saves to localStorage and immediately updates React state.
-   */
+  const replaceRecord = (updated) =>
+    setComplaints((prev) => prev.map((c) => (sameId(c.id, updated.id) ? updated : c)));
+
+  /** Add a new complaint (multipart upload when the API is online). */
   const addComplaint = useCallback(async (payload) => {
     const record = await createComplaint(payload);
-    setComplaints((prev) => [...prev, record]);
+    setComplaints((prev) => [record, ...prev]);
     return record;
   }, []);
 
-  /**
-   * Update status on a single complaint.
-   */
+  /** Update status on a single complaint. */
   const updateStatus = useCallback(async (id, newStatus) => {
-    const updated = await updateComplaint(id, { status: newStatus });
-    setComplaints((prev) => prev.map((c) => (c.id.toLowerCase() === id.toLowerCase() ? updated : c)));
+    const updated = await updateComplaintStatus(id, newStatus);
+    replaceRecord(updated);
     return updated;
   }, []);
 
-  /**
-   * Update a complaint with arbitrary fields.
-   */
-  const updateComplaintData = useCallback(async (id, data) => {
-    const updated = await updateComplaint(id, data);
-    setComplaints((prev) => prev.map((c) => (c.id.toLowerCase() === id.toLowerCase() ? updated : c)));
+  /** Citizen confirms resolution with a rating + optional feedback → Closed. */
+  const confirmResolution = useCallback(async (id, rating, feedback) => {
+    const updated = await confirmResolutionApi(id, rating, feedback);
+    replaceRecord(updated);
     return updated;
   }, []);
 
-  /**
-   * Run simulated AI classification and update state.
-   */
+  /** Re-run AI classification. */
   const reclassifyComplaint = useCallback(async (id) => {
     const updated = await classifyComplaintAI(id);
-    setComplaints((prev) => prev.map((c) => (c.id.toLowerCase() === id.toLowerCase() ? updated : c)));
+    replaceRecord(updated);
     return updated;
   }, []);
 
-  /**
-   * Run simulated AI evidence audit and update state.
-   */
+  /** Run vision AI evidence audit. */
   const auditEvidence = useCallback(async (id) => {
     const updated = await auditEvidenceAI(id);
-    setComplaints((prev) => prev.map((c) => (c.id.toLowerCase() === id.toLowerCase() ? updated : c)));
+    replaceRecord(updated);
     return updated;
   }, []);
 
-  /**
-   * Remove a complaint.
-   */
-  const removeComplaint = useCallback(async (id) => {
-    await deleteComplaint(id);
-    setComplaints((prev) => prev.filter((c) => c.id.toLowerCase() !== id.toLowerCase()));
-  }, []);
-
-  /**
-   * Force re-read all complaints from localStorage.
-   */
+  /** Force re-fetch of all complaints. */
   const refreshComplaints = useCallback(async () => {
-    const all = await getComplaints();
-    setComplaints(all);
-  }, []);
+    await load();
+  }, [load]);
 
   const value = {
     complaints,
     loadingComplaints,
+    apiOnline,
     addComplaint,
     updateStatus,
-    updateComplaint: updateComplaintData,
+    confirmResolution,
     reclassifyComplaint,
     auditEvidence,
-    removeComplaint,
     refreshComplaints,
   };
 
-  return (
-    <ComplaintContext.Provider value={value}>
-      {children}
-    </ComplaintContext.Provider>
-  );
+  return <ComplaintContext.Provider value={value}>{children}</ComplaintContext.Provider>;
 };
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 export const useComplaints = () => {
   const ctx = useContext(ComplaintContext);
   if (!ctx) {
-    throw new Error('useComplaints must be used inside <ComplaintProvider>');
+    throw new Error("useComplaints must be used inside <ComplaintProvider>");
   }
   return ctx;
 };
