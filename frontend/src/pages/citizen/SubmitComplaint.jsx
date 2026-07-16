@@ -12,10 +12,25 @@ import {
   Mic, MicOff, HeartHandshake, PhoneCall,
 } from "lucide-react";
 import { getCitizenProfile } from "../../services/citizenService";
+import { voiceAssist } from "../../services/assistantService";
 import { useComplaints } from "../../context/ComplaintContext";
 import { useSafetyMode } from "../../context/SafetyModeContext";
+import { useLanguage } from "../../context/LanguageContext";
 import { Field, FieldError } from "../../components/ui/Field";
 import { maskAadhaar } from "../../utils/format";
+
+// Languages supported by the voice complaint flow (Web Speech API locales).
+// Speak in ANY of these — the AI translates and drafts the complaint in English.
+const VOICE_LANGUAGES = [
+  { code: "en-IN", label: "English" },
+  { code: "hi-IN", label: "हिंदी" },
+  { code: "mr-IN", label: "मराठी" },
+  { code: "ta-IN", label: "தமிழ்" },
+  { code: "te-IN", label: "తెలుగు" },
+  { code: "kn-IN", label: "ಕನ್ನಡ" },
+  { code: "bn-IN", label: "বাংলা" },
+  { code: "gu-IN", label: "ગુજરાતી" },
+];
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_IMAGES = 5;
@@ -177,6 +192,7 @@ function SubmitComplaint({ safetyForm = false }) {
   const location = useLocation();
   const { addComplaint } = useComplaints();
   const { safetyMode } = useSafetyMode();
+  const { t, language } = useLanguage();
   const [activePreset, setActivePreset] = useState(null);
 
   // Quick-report preset passed from the Safety Center
@@ -204,6 +220,33 @@ function SubmitComplaint({ safetyForm = false }) {
   const [locating, setLocating] = useState(false);
   const [geoError, setGeoError] = useState("");
   const [showMapPicker, setShowMapPicker] = useState(false);
+  // Human-readable address resolved from the GPS pin (reverse geocoding).
+  // Becomes the SECOND line of the complaint address; the typed Area stays first.
+  const [gpsAddress, setGpsAddress] = useState("");
+  const [resolvingAddress, setResolvingAddress] = useState(false);
+
+  /** Reverse-geocode a pin into a precise street address (OpenStreetMap). */
+  const resolveAddress = async ({ latitude, longitude }) => {
+    setResolvingAddress(true);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&zoom=17&addressdetails=0`,
+        { headers: { Accept: "application/json" } }
+      );
+      const data = await res.json();
+      setGpsAddress(data?.display_name || "");
+    } catch {
+      setGpsAddress(""); // best-effort — the pin's coordinates still submit
+    } finally {
+      setResolvingAddress(false);
+    }
+  };
+
+  /** Set the pin + resolve its street address (GPS button and map clicks). */
+  const placePin = (c) => {
+    setCoords(c);
+    resolveAddress(c);
+  };
 
   const captureLocation = () => {
     if (!navigator.geolocation) {
@@ -214,14 +257,14 @@ function SubmitComplaint({ safetyForm = false }) {
     setGeoError("");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+        placePin({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
         setLocating(false);
       },
       () => {
         setGeoError("Could not fetch GPS location. You can still submit without it.");
         setLocating(false);
       },
-      { timeout: 8000 }
+      { timeout: 8000, enableHighAccuracy: true }
     );
   };
 
@@ -229,39 +272,151 @@ function SubmitComplaint({ safetyForm = false }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
 
-  // ── Voice input (Web Speech API) — dictate the description hands-free ─────
-  // Inclusion feature: lets citizens who find typing hard (or are on mobile
-  // at the incident site) speak their complaint instead.
+  // ── Voice input (USP: complaint in ANY language) ───────────────────────────
+  // The citizen picks their language, speaks, and the local AI translates the
+  // transcript into a clean English complaint draft — title auto-filled too.
+  // Inclusion feature: no typing, no English required.
   const SpeechRecognitionImpl =
     typeof window !== "undefined" &&
     (window.SpeechRecognition || window.webkitSpeechRecognition);
   const [listening, setListening] = useState(false);
+  // Voice language follows the website language by default (still switchable)
+  const [voiceLang, setVoiceLang] = useState(`${language}-IN`);
+  useEffect(() => {
+    if (!listening) setVoiceLang(`${language}-IN`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language]);
+  const [voicePolishing, setVoicePolishing] = useState(false);
+  const [voiceNote, setVoiceNote] = useState("");
+  const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef(null);
+  const voiceBufferRef = useRef(""); // full transcript of the current session
+
+  // Friendly explanations for Web Speech API failures — without these the
+  // mic silently "does nothing" and looks broken.
+  const VOICE_ERRORS = {
+    "not-allowed":
+      "Microphone access is blocked. Click the 🔒/🎤 icon in the address bar and allow the microphone, then try again.",
+    "service-not-allowed":
+      "Speech recognition is blocked by the browser. Allow microphone access for this site and retry.",
+    network:
+      "Voice recognition needs an internet connection (the browser's speech service is online). Check your connection and retry — or just type.",
+    "no-speech": "No speech detected — tap the mic and start speaking within a few seconds.",
+    "audio-capture": "No microphone found. Plug in / enable a mic and try again.",
+    aborted: "", // user-initiated stop — not an error
+  };
+
+  // After dictation stops, send the transcript to the AI: it translates to
+  // English (if needed), writes a formal description and drafts a title.
+  const polishTranscript = async (transcript) => {
+    if (!transcript.trim()) return;
+    setVoicePolishing(true);
+    setVoiceNote("");
+    try {
+      const res = await voiceAssist({
+        transcript,
+        language: voiceLang.split("-")[0],
+      });
+      if (res.source === "ollama") {
+        setDescription(res.description.slice(0, 1000));
+        setTitle((prev) => (prev.trim() ? prev : res.title));
+        setVoiceNote(
+          res.translated
+            ? `✨ AI translated your ${res.detected_language} dictation into an English complaint draft.`
+            : "✨ AI polished your dictation into a complaint draft."
+        );
+      } else {
+        // Ollama offline — the raw transcript is already in the field.
+        setVoiceNote("Dictation captured. (AI polish unavailable — start Ollama for translation.)");
+      }
+    } finally {
+      setVoicePolishing(false);
+    }
+  };
 
   const toggleVoiceInput = () => {
     if (listening) {
       recognitionRef.current?.stop();
       return;
     }
-    const rec = new SpeechRecognitionImpl();
-    rec.lang = "en-IN";
+
+    setVoiceError("");
+    setVoiceNote("");
+
+    let rec;
+    try {
+      rec = new SpeechRecognitionImpl();
+    } catch {
+      setVoiceError("Voice input isn't supported in this browser — use Chrome or Edge, or simply type.");
+      return;
+    }
+
+    rec.lang = voiceLang;
     rec.continuous = true;
-    rec.interimResults = false;
+    rec.interimResults = true; // live words on screen while speaking
+    rec.maxAlternatives = 1;
+    voiceBufferRef.current = "";
+    const baseText = description ? description.trimEnd() + " " : "";
+
+    // Watchdog: some browsers (Brave, offline Chrome) "listen" but never
+    // deliver results. If nothing is heard within 8s, tell the user why
+    // instead of appearing dead.
+    let gotAnything = false;
+    const watchdog = setTimeout(() => {
+      if (!gotAnything) {
+        try { rec.stop(); } catch { /* already stopped */ }
+        setVoiceError(
+          "The mic is on but no speech is being detected. Checklist: ① speak clearly near the mic, " +
+          "② make sure you're on Google Chrome or Edge (Brave/Firefox silently block speech), " +
+          "③ Chrome needs an internet connection for speech recognition, " +
+          "④ check the right microphone is selected in the browser's site settings (🔒 icon)."
+        );
+      }
+    }, 8000);
+
+    rec.onspeechstart = () => { gotAnything = true; };
+
     rec.onresult = (e) => {
-      const text = Array.from(e.results)
-        .slice(e.resultIndex)
-        .map((r) => r[0].transcript)
-        .join(" ")
-        .trim();
-      if (text) {
-        setDescription((prev) => `${prev ? prev.trimEnd() + " " : ""}${text}`.slice(0, 1000));
+      gotAnything = true;
+      clearTimeout(watchdog);
+      // Rebuild final + interim each event so live text never duplicates
+      let finals = "";
+      let interim = "";
+      for (let i = 0; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finals += `${t} `;
+        else interim += `${t} `;
+      }
+      voiceBufferRef.current = finals.trim();
+      const live = `${baseText}${finals}${interim}`.trim();
+      if (live) setDescription(live.slice(0, 1000));
+    };
+    rec.onend = () => {
+      clearTimeout(watchdog);
+      setListening(false);
+      // Keep only finalized speech in the field, then let the AI polish it
+      if (voiceBufferRef.current) {
+        setDescription(`${baseText}${voiceBufferRef.current}`.trim().slice(0, 1000));
+        polishTranscript(voiceBufferRef.current);
       }
     };
-    rec.onend = () => setListening(false);
-    rec.onerror = () => setListening(false);
+    rec.onerror = (e) => {
+      setListening(false);
+      const msg = VOICE_ERRORS[e.error];
+      if (msg !== "") {
+        setVoiceError(
+          msg || `Voice recognition failed (${e.error || "unknown error"}). You can retry or type instead.`
+        );
+      }
+    };
+
     recognitionRef.current = rec;
-    rec.start();
-    setListening(true);
+    try {
+      rec.start();
+      setListening(true);
+    } catch {
+      setVoiceError("Could not start the microphone. Close other tabs using the mic and try again.");
+    }
   };
 
   // Stop the microphone if the user leaves the page mid-dictation
@@ -354,6 +509,29 @@ function SubmitComplaint({ safetyForm = false }) {
 
     setSubmitting(true);
     try {
+      // ── Typed-in-your-language support ────────────────────────────────────
+      // If the website language isn't English, the citizen probably typed the
+      // complaint in that language. Translate + formalize it to English before
+      // submission so the AI classifier and admins process clean English text.
+      // (The prompt leaves already-English text untouched; Ollama offline →
+      // the original text is submitted as-is.)
+      let finalTitle = title.trim();
+      let finalDescription = description.trim();
+      if (language !== "en") {
+        try {
+          const res = await voiceAssist({
+            transcript: `${finalTitle}\n${finalDescription}`,
+            language,
+          });
+          if (res.source === "ollama" && res.description) {
+            finalTitle = res.title || finalTitle;
+            finalDescription = res.description;
+          }
+        } catch {
+          /* translation is best-effort — never block submission */
+        }
+      }
+
       // Convert first image to a data-URL so it persists in localStorage
       let imagePreview = null;
       if (images.length > 0) {
@@ -374,12 +552,13 @@ function SubmitComplaint({ safetyForm = false }) {
         },
         complaintLocation: {
           area: area.trim(),
+          gpsAddress: gpsAddress || null, // precise reverse-geocoded line 2
           landmark: landmark.trim() || null,
           pinCode: pinCode.trim() || null,
         },
         complaint: {
-          title: title.trim(),
-          description: description.trim(),
+          title: finalTitle,
+          description: finalDescription,
         },
         imageFile: images[0]?.file || null, // uploaded as primary evidence
         imagePreview,
@@ -418,15 +597,14 @@ function SubmitComplaint({ safetyForm = false }) {
             <CheckCircle className="w-8 h-8 text-status-success-accent" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-text">Complaint Registered!</h2>
+            <h2 className="text-xl font-bold text-text">{t("form.registered")}</h2>
             <p className="text-muted text-sm mt-1.5 leading-relaxed">
-              Your grievance has been recorded and will be routed to the correct
-              department shortly.
+              {t("form.registeredDesc")}
             </p>
           </div>
           <div className="inset-panel px-6 py-4 space-y-1">
             <p className="text-[10px] text-muted uppercase font-bold tracking-widest">
-              Complaint ID
+              {t("form.complaintId")}
             </p>
             <p className="text-2xl font-bold font-mono text-primary">
               {successRecord.id}
@@ -455,10 +633,10 @@ function SubmitComplaint({ safetyForm = false }) {
           </div>
           <div className="flex gap-3">
             <button onClick={() => navigate("/track")} className="btn-primary flex-1">
-              Track My Complaint
+              {t("form.trackMine")}
             </button>
             <button onClick={() => setSuccessRecord(null)} className="btn-secondary flex-1">
-              Lodge Another
+              {t("form.lodgeAnother")}
             </button>
           </div>
         </div>
@@ -468,17 +646,15 @@ function SubmitComplaint({ safetyForm = false }) {
 
   // ── Main Form ──────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-2xl mx-auto w-full pb-12 space-y-5 animate-fade-in">
+    <div className="w-full pb-12 space-y-5 animate-fade-in">
       {/* Page header */}
       <div className="card relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-1 bg-primary" />
         <h1 className="text-xl font-bold text-text">
-          {safetyForm ? "Report a Safety Issue" : "Lodge a Grievance"}
+          {safetyForm ? t("form.titleSafety") : t("form.title")}
         </h1>
         <p className="text-sm text-muted mt-1">
-          {safetyForm
-            ? "Safety reports are prioritized and routed to the right cell. Photo evidence is optional."
-            : "Provide the details and location of your grievance to submit it to the appropriate department."}
+          {safetyForm ? t("form.subtitleSafety") : t("form.subtitle")}
         </p>
       </div>
 
@@ -610,8 +786,8 @@ function SubmitComplaint({ safetyForm = false }) {
         <div className="card space-y-4" data-tour="citizen-details">
           <SectionHeading
             step="1"
-            title="Citizen Details"
-            subtitle="Verified from your Aadhaar session — these fields cannot be edited."
+            title={t("form.citizenDetails")}
+            subtitle={t("form.citizenDetailsSub")}
           />
           {profileLoading ? (
             <div className="flex items-center gap-2 text-muted text-sm py-4">
@@ -646,12 +822,12 @@ function SubmitComplaint({ safetyForm = false }) {
         <div className="card space-y-4" data-tour="location-section">
           <SectionHeading
             step="2"
-            title="Complaint Location"
-            subtitle="Specify where the issue exists — may differ from your home address."
+            title={t("form.location")}
+            subtitle={t("form.locationSub")}
           />
 
           <Field
-            label="Area / Locality"
+            label={t("form.area")}
             required
             icon={MapPin}
             error={errors.area}
@@ -669,7 +845,7 @@ function SubmitComplaint({ safetyForm = false }) {
           </Field>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Landmark" optional icon={Landmark}>
+            <Field label={t("form.landmark")} optional icon={Landmark}>
               <input
                 type="text"
                 value={landmark}
@@ -679,7 +855,7 @@ function SubmitComplaint({ safetyForm = false }) {
               />
             </Field>
 
-            <Field label="Pin Code" optional icon={Hash} error={errors.pinCode}>
+            <Field label={t("form.pin")} optional icon={Hash} error={errors.pinCode}>
               <input
                 type="text"
                 value={pinCode}
@@ -706,7 +882,7 @@ function SubmitComplaint({ safetyForm = false }) {
                   ) : (
                     <MapPin className="w-3.5 h-3.5 text-primary" />
                   )}
-                  {coords ? "Update GPS location" : "Use my GPS location"}
+                  {coords ? t("form.gpsUpdate") : t("form.gps")}
                 </button>
                 <button
                   type="button"
@@ -714,12 +890,17 @@ function SubmitComplaint({ safetyForm = false }) {
                   className="btn-secondary !py-2 text-xs w-fit"
                 >
                   <MapIcon className="w-3.5 h-3.5 text-primary" />
-                  {showMapPicker ? "Hide map" : "Pick on map"}
+                  {showMapPicker ? t("form.hideMap") : t("form.pickMap")}
                 </button>
               </div>
               {coords && (
                 <span className="badge-success !text-[11px] font-mono">
                   {coords.latitude.toFixed(4)}, {coords.longitude.toFixed(4)} pinned
+                </span>
+              )}
+              {resolvingAddress && (
+                <span className="text-[11px] text-muted flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Resolving exact address…
                 </span>
               )}
               {geoError && <span className="text-[11px] text-status-warning-text">{geoError}</span>}
@@ -732,10 +913,23 @@ function SubmitComplaint({ safetyForm = false }) {
 
             {showMapPicker && (
               <div className="space-y-1.5 animate-fade-in">
-                <LocationPickerMap coords={coords} onPick={setCoords} />
+                <LocationPickerMap coords={coords} onPick={placePin} />
                 <p className="text-[11px] text-muted">
                   Click anywhere on the map to drop the complaint location pin.
                 </p>
+              </div>
+            )}
+
+            {/* Resolved GPS address — attached as the 2nd address line */}
+            {gpsAddress && (
+              <div className="inset-panel px-3.5 py-2.5 flex items-start gap-2 animate-fade-in">
+                <MapPin className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                    GPS-verified address (added to your complaint)
+                  </p>
+                  <p className="text-xs text-text font-medium leading-relaxed">{gpsAddress}</p>
+                </div>
               </div>
             )}
           </div>
@@ -745,8 +939,8 @@ function SubmitComplaint({ safetyForm = false }) {
         <div className="card space-y-5">
           <SectionHeading
             step="3"
-            title="Complaint Details"
-            subtitle="Describe the issue clearly — our AI will route it to the right department."
+            title={t("form.details")}
+            subtitle={t("form.detailsSub")}
           />
 
           {errors.submit && (
@@ -757,7 +951,7 @@ function SubmitComplaint({ safetyForm = false }) {
           )}
 
           <div data-tour="details-section" className="space-y-5">
-          <Field label="Complaint Title" required icon={FileText} error={errors.title}>
+          <Field label={t("form.complaintTitle")} required icon={FileText} error={errors.title}>
             <input
               type="text"
               value={title}
@@ -768,7 +962,7 @@ function SubmitComplaint({ safetyForm = false }) {
           </Field>
 
           <Field
-            label="Complaint Description"
+            label={t("form.description")}
             required
             icon={AlignLeft}
             error={errors.description}
@@ -787,9 +981,10 @@ function SubmitComplaint({ safetyForm = false }) {
               <button
                 type="button"
                 onClick={toggleVoiceInput}
-                title={listening ? "Stop dictation" : "Dictate your complaint"}
+                disabled={voicePolishing}
+                title={listening ? "Stop dictation" : "Dictate your complaint in any language"}
                 aria-label={listening ? "Stop voice input" : "Start voice input"}
-                className={`absolute right-3 top-3 p-2 rounded-lg transition-colors ${
+                className={`absolute right-3 top-3 p-2 rounded-lg transition-colors disabled:opacity-50 ${
                   listening
                     ? "bg-status-error-bg text-status-error-accent animate-pulse-ring"
                     : "bg-primary-light text-primary hover:bg-primary hover:text-white"
@@ -799,10 +994,53 @@ function SubmitComplaint({ safetyForm = false }) {
               </button>
             )}
           </Field>
-          {listening && (
-            <p className="text-[11px] text-status-error-text font-semibold -mt-2 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-status-error-accent animate-pulse" />
-              Listening… speak your complaint, tap the mic again to stop.
+
+          {/* Voice language + status row */}
+          {SpeechRecognitionImpl && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 -mt-2">
+              <label className="flex items-center gap-1.5 text-[11px] text-muted font-semibold">
+                <Mic className="w-3 h-3 text-primary" />
+                {t("form.speakIn")}
+                <select
+                  value={voiceLang}
+                  onChange={(e) => setVoiceLang(e.target.value)}
+                  disabled={listening || voicePolishing}
+                  className="input !w-auto !py-1 !px-2 !text-[11px] cursor-pointer"
+                >
+                  {VOICE_LANGUAGES.map((l) => (
+                    <option key={l.code} value={l.code}>{l.label}</option>
+                  ))}
+                </select>
+                <span className="font-normal">{t("form.aiTranslates")}</span>
+              </label>
+
+              {listening && (
+                <span className="text-[11px] text-status-error-text font-semibold flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-status-error-accent animate-pulse" />
+                  Listening… speak now, tap the mic again to stop.
+                </span>
+              )}
+              {voicePolishing && (
+                <span className="text-[11px] text-primary font-semibold flex items-center gap-1.5">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  AI is translating &amp; drafting your complaint…
+                </span>
+              )}
+              {!listening && !voicePolishing && voiceNote && (
+                <span className="text-[11px] text-primary font-semibold">{voiceNote}</span>
+              )}
+              {!listening && voiceError && (
+                <span className="text-[11px] text-status-error-text font-semibold flex items-start gap-1.5 w-full">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                  {voiceError}
+                </span>
+              )}
+            </div>
+          )}
+          {!SpeechRecognitionImpl && (
+            <p className="text-[11px] text-muted -mt-2">
+              🎤 Voice dictation needs Chrome or Edge — this browser doesn't support speech
+              recognition, so please type your complaint.
             </p>
           )}
           </div>
@@ -811,9 +1049,9 @@ function SubmitComplaint({ safetyForm = false }) {
           <div data-tour="evidence-upload">
             <div className="flex items-center justify-between">
               <label className="label">
-                Evidence Images{" "}
+                {t("form.evidence")}{" "}
                 {safetyForm ? (
-                  <span className="text-muted font-normal normal-case">(optional for safety reports)</span>
+                  <span className="text-muted font-normal normal-case">{t("form.evidenceOptional")}</span>
                 ) : (
                   <span className="text-status-error-accent">*</span>
                 )}
@@ -900,11 +1138,11 @@ function SubmitComplaint({ safetyForm = false }) {
           >
             {submitting ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" /> Submitting…
+                <Loader2 className="w-4 h-4 animate-spin" /> {t("form.submitting")}
               </>
             ) : (
               <>
-                <Navigation className="w-4 h-4" /> Submit Grievance
+                <Navigation className="w-4 h-4" /> {t("form.submit")}
               </>
             )}
           </button>
