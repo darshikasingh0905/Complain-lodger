@@ -106,13 +106,17 @@ export default function CitizenTour() {
 
   const step = active ? STEPS[stepIdx] : null;
 
-  // ── Auto-start on first citizen login ───────────────────────────────────────
+  // ── Auto-start on first citizen login — exactly ONCE ───────────────────────
+  // The seen-flag is written the moment the tour fires, so refreshing the page
+  // (or abandoning mid-tour) never replays it. Replay stays available via the
+  // dashboard's "Take a Tour" button.
   useEffect(() => {
     if (isAuthenticated && userRole === "citizen" && !localStorage.getItem(TOUR_KEY)) {
+      localStorage.setItem(TOUR_KEY, "1");
       const t = setTimeout(() => {
         setStepIdx(0);
         setActive(true);
-      }, 900);
+      }, 400);
       return () => clearTimeout(t);
     }
   }, [isAuthenticated, userRole]);
