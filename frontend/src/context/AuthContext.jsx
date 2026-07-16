@@ -10,16 +10,19 @@ export const AuthProvider = ({ children }) => {
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Initialize demo accounts and restore login session on launch
+  // Initialize demo accounts and restore login session on launch.
+  // Async: seeding hashes the demo admin password before storing it.
   useEffect(() => {
-    initLocalStorageData();
-    const session = authService.getCurrentUser();
-    if (session && session.isAuthenticated) {
-      setIsAuthenticated(true);
-      setUserRole(session.role);
-      setUserData(session.user);
-    }
-    setLoading(false);
+    (async () => {
+      await initLocalStorageData();
+      const session = authService.getCurrentUser();
+      if (session && session.isAuthenticated) {
+        setIsAuthenticated(true);
+        setUserRole(session.role);
+        setUserData(session.user);
+      }
+      setLoading(false);
+    })();
   }, []);
 
   // Citizen OTP Request
