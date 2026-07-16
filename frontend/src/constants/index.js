@@ -42,6 +42,8 @@ export const DEPT_COLORS = {
   "Street Lights": "#B98A2F",
   "Public Transport": "#B85B7E",
   "Women Safety Cell": "#DB2777",
+  Police: "#5B6B92",
+  "Traffic Police": "#8A6FC0",
   Other: "#8A897F",
 };
 
@@ -63,7 +65,9 @@ export const getDeptColor = (dept) => {
     return DEPT_COLORS.Sanitation;
   if (d.includes("drain") || d.includes("sewer")) return DEPT_COLORS.Drainage;
   if (d.includes("light")) return DEPT_COLORS["Street Lights"];
+  if (d.includes("traffic")) return DEPT_COLORS["Traffic Police"];
   if (d.includes("transport") || d.includes("bus")) return DEPT_COLORS["Public Transport"];
+  if (d.includes("police")) return DEPT_COLORS.Police;
   return DEPT_COLORS.Other;
 };
 

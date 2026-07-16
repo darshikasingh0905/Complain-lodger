@@ -9,6 +9,7 @@ import {
   BarChart2,
   ChevronRight,
   Sparkles,
+  Shield,
 } from "lucide-react";
 
 import useAuth from "../../hooks/useAuth";
@@ -136,22 +137,22 @@ export const CitizenDashboard = () => {
           </button>
 
           <button
-            onClick={() => navigate("/track")}
-            data-tour="track-card"
+            onClick={() => navigate("/safety")}
+            data-tour="safety-card"
             className="card card-hover text-left group flex flex-col justify-between min-h-[170px]"
           >
-            <div className="w-12 h-12 rounded-lg bg-status-info-bg flex items-center justify-center">
-              <Search className="w-6 h-6 text-status-info-accent" />
+            <div className="w-12 h-12 rounded-lg bg-status-error-bg flex items-center justify-center">
+              <Shield className="w-6 h-6 text-status-error-accent" />
             </div>
             <div>
               <h3 className="mt-6 font-semibold text-text group-hover:text-primary transition-colors">
-                Track Status
+                Safety Center
               </h3>
               <p className="text-sm text-muted mt-2">
-                View updates and progress of submitted complaints.
+                Report unsafe areas, robbery or harassment — prioritized for everyone.
               </p>
               <span className="inline-flex items-center gap-1 mt-4 text-sm font-semibold text-primary">
-                View complaints
+                Open Safety Center
                 <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
               </span>
             </div>

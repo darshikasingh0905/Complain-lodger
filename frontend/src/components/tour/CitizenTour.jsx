@@ -35,9 +35,9 @@ const STEPS = [
   },
   {
     path: "/dashboard",
-    selector: '[data-tour="safety-toggle"]',
-    title: "Women Safety Mode 💗",
-    body: "Our signature feature: flip this switch and the portal turns pink, unlocks one-tap safety reporting (harassment, stalking, unsafe areas, robbery), shows emergency helplines, makes photo evidence optional — and every safety complaint gets a dedicated +15 priority boost so it's acted on first.",
+    selector: '[data-tour="safety-card"]',
+    title: "Community Safety Center 🛡️",
+    body: "Our signature feature: one-tap reporting for robbery, dark streets, fights and harassment — safety complaints get a dedicated +15 priority boost for everyone. Inside, women can flip on Women Safety Mode: the portal turns pink, helplines appear, and photo evidence becomes optional.",
   },
   {
     path: "/",

@@ -211,7 +211,7 @@ export default function SettingsPage() {
             <span className="badge-error">+20 pts on breach</span>
           </div>
           <div className="inset-panel px-4 py-3 flex items-center justify-between">
-            <span className="text-sm font-medium text-text">Women Safety Boost ♀</span>
+            <span className="text-sm font-medium text-text">Safety Boost (incl. women safety)</span>
             <span className="badge-primary">+15 pts on safety complaints</span>
           </div>
         </div>

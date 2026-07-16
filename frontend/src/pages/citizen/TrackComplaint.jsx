@@ -662,7 +662,7 @@ function TrackComplaint() {
                     { label: "Location", val: bd.location ?? 0, max: 5 },
                     { label: "Time Pending", val: bd.timePending ?? 0, max: 5 },
                     ...(bd.womenSafety > 0
-                      ? [{ label: "Women Safety ♀", val: bd.womenSafety, max: 15 }]
+                      ? [{ label: "Safety Boost", val: bd.womenSafety, max: 15 }]
                       : []),
                   ];
 

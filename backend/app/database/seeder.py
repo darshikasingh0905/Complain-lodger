@@ -381,6 +381,43 @@ def seed_database_if_empty(db: Session):
             status="In Progress",  # 4+ days High → SLA engine escalates it
             created_at=now - timedelta(days=4), updated_at=now - timedelta(days=3),
         ),
+        # ── General community safety (gender-neutral, routed to Police) ──
+        Complaint(
+            citizen_name="Rohan Verma",
+            citizen_phone="9876522222",
+            title="Mobile snatching at vegetable market",
+            description="Two mobile phone snatching incidents happened at the Mandai vegetable market this week. Shoppers of all ages feel unsafe carrying phones openly. Police patrolling is needed during market hours.",
+            latitude=18.5136, longitude=73.8560,
+            address="Mandai Market, Pune",
+            department="Police", category="Public Nuisance / Theft",
+            priority="High", ai_severity="Major", ai_confidence=0.9,
+            ai_reason="Repeated snatching incidents at a crowded public market.",
+            ai_keywords="snatching, robbery, market, theft",
+            ai_summary="Repeated snatching incidents at a crowded public market.",
+            priorityScore=75, priorityLevel="High",
+            priorityBreakdown={"safetyRisk": 30, "publicImpact": 10, "essentialService": 0, "urgency": 10, "duplicates": 5, "location": 5, "timePending": 0, "escalationBoost": 0, "womenSafety": 15},
+            assigned_officer="Officer Deshpande",
+            status="Submitted",
+            created_at=now - timedelta(hours=20), updated_at=now - timedelta(hours=20),
+        ),
+        Complaint(
+            citizen_name="Vikram Singh",
+            citizen_phone="9876544444",
+            title="Nightly fights outside liquor shop",
+            description="Drunk brawls and fights break out outside the liquor shop on our lane almost every night. Residents returning from work fear assault and avoid the stretch entirely after 10 pm.",
+            latitude=18.5388, longitude=73.8677,
+            address="Bund Garden Road, Pune",
+            department="Police", category="Public Nuisance / Theft",
+            priority="Medium", ai_severity="Moderate", ai_confidence=0.88,
+            ai_reason="Recurring public disturbances creating assault risk for residents.",
+            ai_keywords="fight, brawl, assault, nuisance",
+            ai_summary="Recurring public disturbances creating assault risk for residents.",
+            priorityScore=62, priorityLevel="High",
+            priorityBreakdown={"safetyRisk": 15, "publicImpact": 10, "essentialService": 0, "urgency": 5, "duplicates": 0, "location": 0, "timePending": 2, "escalationBoost": 0, "womenSafety": 15},
+            assigned_officer="Officer Deshpande",
+            status="Assigned",
+            created_at=now - timedelta(days=2, hours=6), updated_at=now - timedelta(days=1),
+        ),
     ]
 
     db.add_all(seeds)

@@ -2,6 +2,7 @@ import React from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ShieldCheck,
+  ShieldAlert,
   PlusCircle,
   Search,
   LayoutDashboard,
@@ -24,6 +25,7 @@ const CITIZEN_NAV = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { path: "/", label: "Lodge Grievance", icon: PlusCircle },
   { path: "/track", label: "Track Status", icon: Search },
+  { path: "/safety", label: "Safety", icon: ShieldAlert },
 ];
 
 const ADMIN_NAV = [
@@ -110,8 +112,10 @@ function Navbar() {
               })}
             </div>
 
-            {/* Women Safety Mode toggle — citizens only (the USP switch) */}
-            {userRole === "citizen" && (
+            {/* Women Safety Mode toggle — appears inside the Safety Center
+                context (or anywhere while the mode is on, so it can be
+                switched off from any page) */}
+            {userRole === "citizen" && (currentPath === "/safety" || safetyMode) && (
               <button
                 onClick={toggleSafetyMode}
                 role="switch"

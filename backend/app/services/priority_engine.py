@@ -171,7 +171,7 @@ def calculate_priority(
     if is_escalated:
         reasons.append("SLA breach escalation boost")
     if women_safety_score > 0:
-        reasons.append("flagged as a women-safety concern (dedicated priority boost applied)")
+        reasons.append("flagged as a public-safety concern (dedicated priority boost applied)")
 
     if reasons:
         reason_explanation = f"Complaint prioritized due to: {', and '.join(reasons)}."

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { MapContainer, TileLayer, CircleMarker, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import {
@@ -58,6 +58,43 @@ const HELPLINES = [
   { label: "Emergency", number: "112" },
   { label: "Women Helpline", number: "1091" },
   { label: "Women in Distress", number: "181" },
+];
+
+// General (gender-neutral) safety presets — used when the user is in a safety
+// flow without Women Safety Mode (e.g. arrived via the Safety Center, or
+// switched the pink mode off mid-report).
+const GENERAL_SAFETY_PRESETS = [
+  {
+    label: "Robbery / Snatching",
+    title: "Robbery / snatching incident at ",
+    starter: "A robbery / snatching incident occurred here. People in the area feel unsafe. ",
+  },
+  {
+    label: "Unsafe / Dark Street",
+    title: "Unsafe dark street at ",
+    starter: "This street is unsafe at night — the lights are dead and the lane is completely dark. ",
+  },
+  {
+    label: "Suspicious Activity",
+    title: "Suspicious activity near ",
+    starter: "Suspicious individuals have been loitering here, making residents feel unsafe. ",
+  },
+  {
+    label: "Street Fight / Nuisance",
+    title: "Public nuisance / fights at ",
+    starter: "Frequent fights and drunk nuisance here create an unsafe atmosphere and risk of assault. ",
+  },
+  {
+    label: "Harassment",
+    title: "Harassment incident near ",
+    starter: "I want to report harassment in this area. It feels very unsafe. ",
+  },
+];
+
+const GENERAL_HELPLINES = [
+  { label: "Emergency", number: "112" },
+  { label: "Police", number: "100" },
+  { label: "Women Helpline", number: "1091" },
 ];
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -130,9 +167,32 @@ const SectionHeading = ({ step, title, subtitle }) => (
 // ─── Main Component ───────────────────────────────────────────────────────────
 function SubmitComplaint() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { addComplaint } = useComplaints();
   const { safetyMode } = useSafetyMode();
   const [activePreset, setActivePreset] = useState(null);
+
+  // Arrived from the Safety Center with a quick-report preset?
+  // Safety intakes (like Women Safety Mode) don't require photo evidence.
+  const [safetyIntake, setSafetyIntake] = useState(false);
+  useEffect(() => {
+    const p = location.state?.safetyPreset;
+    if (p) {
+      setTitle(p.title);
+      setDescription(p.starter);
+      setSafetyIntake(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // If Women Safety Mode is switched OFF mid-report, stay in the safety flow:
+  // the form falls back to the general (green) safety panel instead of
+  // reverting to a plain grievance form.
+  const prevSafetyMode = useRef(safetyMode);
+  useEffect(() => {
+    if (prevSafetyMode.current && !safetyMode) setSafetyIntake(true);
+    prevSafetyMode.current = safetyMode;
+  }, [safetyMode]);
 
   // ── Citizen profile ────────────────────────────────────────────────────────
   const [citizen, setCitizen] = useState(null);
@@ -278,9 +338,10 @@ function SubmitComplaint() {
     if (!description.trim()) e.description = "Please describe the issue.";
     if (description.length > 1000) e.description = "Description must not exceed 1000 characters.";
     if (pinCode && !/^\d{6}$/.test(pinCode)) e.pinCode = "Pin code must be exactly 6 digits.";
-    // Photo evidence is NOT required in Women Safety Mode — harassment and
-    // stalking incidents rarely have photos, and demanding one is a barrier.
-    if (!safetyMode && images.length === 0)
+    // Photo evidence is NOT required for safety reports (Women Safety Mode or
+    // Safety Center intakes) — incidents like harassment or robbery rarely
+    // have photos, and demanding one is a barrier to reporting.
+    if (!safetyMode && !safetyIntake && images.length === 0)
       e.images = "Please upload at least one image of the issue.";
     return e;
   };
@@ -422,6 +483,65 @@ function SubmitComplaint() {
           appropriate department.
         </p>
       </div>
+
+      {/* ── General safety panel (green) — safety flow without Women Mode ── */}
+      {!safetyMode && safetyIntake && (
+        <div className="card !border-primary/30 relative overflow-hidden animate-fade-in">
+          <div className="absolute top-0 left-0 w-full h-1 bg-primary" />
+          <div className="flex items-start gap-3">
+            <div className="icon-chip w-11 h-11 shrink-0">
+              <ShieldCheck className="w-6 h-6 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-bold text-text flex items-center gap-2 flex-wrap">
+                Safety report
+                <span className="badge-primary !text-[10px]">+15 priority boost</span>
+              </h2>
+              <p className="text-xs text-muted mt-1 leading-relaxed">
+                Safety complaints are prioritized for everyone and photo evidence is
+                optional. Pick a quick category or describe in your own words.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 mt-4">
+            {GENERAL_SAFETY_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => {
+                  setActivePreset(p.label);
+                  setTitle(p.title);
+                  setDescription((prev) => (prev.startsWith(p.starter) ? prev : p.starter));
+                }}
+                className={`px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${
+                  activePreset === p.label
+                    ? "bg-primary text-white border-primary"
+                    : "bg-primary-light text-primary border-primary/20 hover:bg-primary hover:text-white"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-border flex flex-wrap items-center gap-x-5 gap-y-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted">
+              In immediate danger? Call now
+            </span>
+            {GENERAL_HELPLINES.map((h) => (
+              <a
+                key={h.number}
+                href={`tel:${h.number}`}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:text-primary-hover transition-colors"
+              >
+                <PhoneCall className="w-3.5 h-3.5" />
+                {h.label}: <span className="font-mono">{h.number}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Women Safety panel (USP) ── */}
       {safetyMode && (
@@ -694,8 +814,8 @@ function SubmitComplaint() {
             <div className="flex items-center justify-between">
               <label className="label">
                 Evidence Images{" "}
-                {safetyMode ? (
-                  <span className="text-muted font-normal normal-case">(optional in safety mode)</span>
+                {safetyMode || safetyIntake ? (
+                  <span className="text-muted font-normal normal-case">(optional for safety reports)</span>
                 ) : (
                   <span className="text-status-error-accent">*</span>
                 )}
@@ -704,7 +824,7 @@ function SubmitComplaint() {
                 {images.length}/{MAX_IMAGES} uploaded
               </span>
             </div>
-            {safetyMode && images.length === 0 && (
+            {(safetyMode || safetyIntake) && images.length === 0 && (
               <p className="text-[11px] text-muted mb-1.5">
                 No photo needed — we understand safety incidents often can't be photographed.
                 Your description is enough.

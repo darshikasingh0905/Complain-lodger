@@ -762,7 +762,7 @@ function AdminPanel() {
                     { label: "Location", value: breakdown.location ?? 0, max: 5 },
                     { label: "Time Pending", value: breakdown.timePending ?? 0, max: 5 },
                     ...(breakdown.womenSafety > 0
-                      ? [{ label: "Women Safety Boost ♀", value: breakdown.womenSafety, max: 15 }]
+                      ? [{ label: "Safety Boost", value: breakdown.womenSafety, max: 15 }]
                       : []),
                   ];
 

@@ -354,7 +354,7 @@ const calculateLocalPriority = (description, address, category, createdAt, statu
   if (essentialVal) reasons.push("disruption to essential services");
   if (duplicatesScore > 0) reasons.push(`linked to multiple similar reports (${duplicateCount} duplicate(s) detected)`);
   if (locationScore > 0) reasons.push("near critical public location/infrastructure");
-  if (womenSafetyScore > 0) reasons.push("flagged as a women-safety concern (dedicated priority boost applied)");
+  if (womenSafetyScore > 0) reasons.push("flagged as a public-safety concern (dedicated priority boost applied)");
 
   const reason =
     reasons.length > 0

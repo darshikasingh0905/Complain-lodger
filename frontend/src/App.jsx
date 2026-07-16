@@ -26,6 +26,7 @@ import OTPVerification from "./pages/auth/OTPVerification";
 import CitizenDashboard from "./pages/citizen/CitizenDashboard";
 import SubmitComplaint from "./pages/citizen/SubmitComplaint";
 import TrackComplaint from "./pages/citizen/TrackComplaint";
+import SafetyPage from "./pages/citizen/SafetyPage";
 
 // Admin pages
 import AdminPanel from "./pages/admin/AdminPanel";
@@ -77,6 +78,14 @@ function App() {
                   element={
                     <RoleGuard allowedRoles={["citizen"]}>
                       <TrackComplaint />
+                    </RoleGuard>
+                  }
+                />
+                <Route
+                  path="/safety"
+                  element={
+                    <RoleGuard allowedRoles={["citizen"]}>
+                      <SafetyPage />
                     </RoleGuard>
                   }
                 />
