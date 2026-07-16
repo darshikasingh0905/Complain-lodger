@@ -43,10 +43,32 @@ def create_database_if_not_exists(url_str: str):
     except Exception as e:
         print(f"Warning: Database auto-creation failed: {e}. Attempting connection anyway.")
 
-# Try creating the database if it doesn't exist
-create_database_if_not_exists(DATABASE_URL)
+def _build_engine():
+    """
+    Connect to the configured MySQL database; if it is unreachable, fall back
+    to a local SQLite file so the whole system stays runnable with zero setup
+    (hackathon/demo resilience). The active dialect is logged on boot.
+    """
+    if DATABASE_URL.startswith("mysql"):
+        try:
+            create_database_if_not_exists(DATABASE_URL)
+            eng = create_engine(DATABASE_URL, pool_pre_ping=True)
+            with eng.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            print("[DB] Connected to MySQL database.")
+            return eng
+        except Exception as e:
+            print(f"[DB] MySQL unavailable ({e.__class__.__name__}). Falling back to local SQLite database.")
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    sqlite_path = os.path.join(BASE_DIR, "grievance_local.db")
+    eng = create_engine(
+        f"sqlite:///{sqlite_path}",
+        connect_args={"check_same_thread": False},
+    )
+    print(f"[DB] Using SQLite database at {sqlite_path}")
+    return eng
+
+engine = _build_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

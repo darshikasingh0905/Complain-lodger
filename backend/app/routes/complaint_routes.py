@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from app.database.db import get_db
-from app.schemas.complaint import ComplaintCreate, ComplaintResponse, ComplaintStatusUpdate, ComplaintAIUpdate, EvidenceAuditResult
+from app.schemas.complaint import ComplaintCreate, ComplaintResponse, ComplaintStatusUpdate, ComplaintAIUpdate, EvidenceAuditResult, ConfirmResolutionRequest
 import app.services.complaint_service as service
 from app.services import ai_service
 
@@ -19,28 +19,51 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 
 @router.get("/map-data")
-def get_map_data(db: Session = Depends(get_db)):
+def get_map_data(
+    role: Optional[str] = None,
+    department: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
     """
     Returns a lean payload of all complaints that have GPS coordinates,
     used by the frontend Leaflet heatmap to render pins and density layers.
     Only returns fields required for map rendering — no large text bodies.
     """
     from app.models.complaint import Complaint
-    complaints = (
-        db.query(
-            Complaint.id,
-            Complaint.latitude,
-            Complaint.longitude,
-            Complaint.department,
-            Complaint.priority,
-            Complaint.status,
-            Complaint.description,
-            Complaint.address,
-            Complaint.category,
-        )
-        .filter(Complaint.latitude.isnot(None), Complaint.longitude.isnot(None))
-        .all()
-    )
+    from sqlalchemy import or_
+    
+    query = db.query(
+        Complaint.id,
+        Complaint.latitude,
+        Complaint.longitude,
+        Complaint.department,
+        Complaint.priority,
+        Complaint.status,
+        Complaint.description,
+        Complaint.address,
+        Complaint.category,
+    ).filter(Complaint.latitude.isnot(None), Complaint.longitude.isnot(None))
+    
+    if role == "department_admin" and department:
+        name = department.lower().strip()
+        dept_filters = []
+        if "roads" in name:
+            dept_filters.append(Complaint.department == "Roads and Drainage")
+        elif "electricity" in name:
+            dept_filters.append(Complaint.department == "Electricity Department")
+        elif "water" in name:
+            dept_filters.append(Complaint.department == "Water Supply Department")
+        elif "sanitation" in name or "garbage" in name or "solid waste" in name:
+            dept_filters.append(Complaint.department == "Solid Waste Management")
+        elif "health" in name:
+            dept_filters.append(Complaint.department == "Public Health")
+        elif "transport" in name or "traffic" in name:
+            dept_filters.append(Complaint.department == "Traffic Police")
+        else:
+            dept_filters.append(Complaint.department.ilike(f"%{department}%"))
+        query = query.filter(or_(*dept_filters))
+        
+    complaints = query.all()
     return [
         {
             "id": c.id,
@@ -56,10 +79,12 @@ def get_map_data(db: Session = Depends(get_db)):
         for c in complaints
     ]
 
+
 @router.post("/submit", response_model=ComplaintResponse, status_code=status.HTTP_201_CREATED)
 def submit_complaint_form(
     citizen_name: Optional[str] = Form(None),
     citizen_phone: Optional[str] = Form(None),
+    title: Optional[str] = Form(None),
     description: str = Form(...),
     latitude: Optional[float] = Form(None),
     longitude: Optional[float] = Form(None),
@@ -98,6 +123,7 @@ def submit_complaint_form(
         schema = ComplaintCreate(
             citizen_name=citizen_name,
             citizen_phone=citizen_phone,
+            title=title,
             description=description,
             latitude=latitude,
             longitude=longitude,
@@ -126,13 +152,16 @@ def create_new_complaint(complaint: ComplaintCreate, db: Session = Depends(get_d
 
 @router.get("/", response_model=List[ComplaintResponse])
 def read_all_complaints(
+    role: Optional[str] = None,
     department: Optional[str] = None, 
     status: Optional[str] = None, 
     db: Session = Depends(get_db)
 ):
     """
-    List all filed grievances. Supports optional parameters 'department' or 'status'.
+    List all filed grievances. Supports optional parameters 'role', 'department' or 'status'.
     """
+    if role == "department_admin" and department:
+        return service.get_complaints_by_admin_dept(db, admin_department=department, status=status)
     return service.get_complaints(db, department=department, status=status)
 
 @router.get("/track/{query}", response_model=List[ComplaintResponse])
@@ -147,6 +176,70 @@ def track_citizen_complaints(query: str, db: Session = Depends(get_db)):
             detail=f"No complaints found matching reference query '{query}'"
         )
     return complaints
+
+# NOTE: All static paths (e.g. /trends, /admin-notifications) MUST be declared
+# BEFORE the dynamic /{complaint_id} route — otherwise FastAPI tries to parse
+# them as an int path param and returns 422 before ever reaching the handler.
+
+@router.get("/trends")
+def get_complaint_trends(
+    role: Optional[str] = None,
+    department: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves chronological trending data, department frequencies, priority metrics,
+    and emerging high-risk hotspot warning zones.
+    """
+    try:
+        if role == "department_admin" and department:
+            return service.get_analytics_data(db, admin_department=department)
+        return service.get_analytics_data(db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch chronological analytics data: {str(e)}"
+        )
+
+@router.get("/admin-notifications", response_model=List[dict])
+def get_admin_notifications(
+    role: Optional[str] = None,
+    department: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves notifications filtered by department for admin roles.
+    If role == super_admin, returns all notifications.
+    If role == department_admin, returns only notifications for complaints in the admin's department.
+    """
+    from app.models.notification import Notification
+    from app.models.complaint import Complaint
+    from sqlalchemy import or_
+
+    query = db.query(Notification)
+    if role == "department_admin" and department:
+        name = department.lower().strip()
+        dept_filters = []
+        if "roads" in name:
+            dept_filters.append(Complaint.department == "Roads and Drainage")
+        elif "electricity" in name:
+            dept_filters.append(Complaint.department == "Electricity Department")
+        elif "water" in name:
+            dept_filters.append(Complaint.department == "Water Supply Department")
+        elif "sanitation" in name or "garbage" in name or "solid waste" in name:
+            dept_filters.append(Complaint.department == "Solid Waste Management")
+        elif "health" in name:
+            dept_filters.append(Complaint.department == "Public Health")
+        elif "transport" in name or "traffic" in name:
+            dept_filters.append(Complaint.department == "Traffic Police")
+        else:
+            dept_filters.append(Complaint.department.ilike(f"%{department}%"))
+
+        complaint_ids = db.query(Complaint.id).filter(or_(*dept_filters)).subquery()
+        query = query.filter(Notification.complaint_id.in_(complaint_ids))
+
+    notifications = query.order_by(Notification.created_at.desc()).all()
+    return [n.to_dict() for n in notifications]
 
 @router.get("/{complaint_id}", response_model=ComplaintResponse)
 def read_complaint_detail(complaint_id: int, db: Session = Depends(get_db)):
@@ -262,17 +355,56 @@ def analyze_evidence(complaint_id: int, db: Session = Depends(get_db)):
             detail=f"Evidence analysis failed: {str(e)}"
         )
 
-@router.get("/trends")
-def get_complaint_trends(db: Session = Depends(get_db)):
+@router.get("/notifications/{phone}", response_model=List[dict])
+def get_citizen_notifications(phone: str, db: Session = Depends(get_db)):
     """
-    Retrieves chronological trending data, department frequencies, priority metrics,
-    and emerging high-risk hotspot warning zones.
+    Retrieves all notifications for a specific citizen by registered phone number.
     """
-    try:
-        return service.get_analytics_data(db)
-    except Exception as e:
+    from app.models.notification import Notification
+    notifications = (
+        db.query(Notification)
+        .filter(Notification.citizen_phone == phone)
+        .order_by(Notification.created_at.desc())
+        .all()
+    )
+    return [n.to_dict() for n in notifications]
+
+@router.patch("/notifications/{notification_id}/read", response_model=dict)
+def mark_notification_as_read(notification_id: int, db: Session = Depends(get_db)):
+    """
+    Marks a notification as read.
+    """
+    from app.models.notification import Notification
+    n = db.query(Notification).filter(Notification.id == notification_id).first()
+    if not n:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch chronological analytics data: {str(e)}"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Notification with ID {notification_id} not found."
         )
+    n.is_read = True
+    db.commit()
+    return {"status": "success", "id": notification_id}
+
+@router.post("/{complaint_id}/confirm-resolution", response_model=ComplaintResponse)
+def confirm_resolution(
+    complaint_id: int,
+    payload: ConfirmResolutionRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Confirms a resolved complaint, logs the citizen's rating & feedback, and shifts the status to Closed.
+    """
+    updated = service.confirm_complaint_resolution(
+        db,
+        complaint_id,
+        rating=payload.rating,
+        feedback=payload.feedback
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Complaint with ID {complaint_id} does not exist"
+        )
+    return updated
+
 

@@ -6,13 +6,51 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
 from app.database.db import get_db, Base, engine
 from app.routes.complaint_routes import router as complaint_router
+from app.models.notification import Notification
 
 # Autogenerate database tables defined in sqlalchemy models mapping on boot
 try:
     Base.metadata.create_all(bind=engine)
     print("Database tables synchronized successfully.")
+    
+    # Run database seeder if complaints is empty
+    from app.database.db import SessionLocal
+    db_session = SessionLocal()
+    try:
+        from app.database.seeder import seed_database_if_empty
+        seed_database_if_empty(db_session)
+    finally:
+        db_session.close()
 except Exception as err:
-    print(f"Error running database synchronization: {err}")
+    print(f"Error running database synchronization or seeder: {err}")
+
+# Check and add missing columns to complaints table (MySQL only — SQLite
+# databases are created fresh by create_all with the full current schema)
+try:
+    if engine.dialect.name != "mysql":
+        raise RuntimeError("skip: non-MySQL dialect")
+    with engine.connect() as conn:
+        result = conn.execute(text("SHOW COLUMNS FROM complaints"))
+        columns = [row[0] for row in result.fetchall()]
+        
+        # Alter table to add missing fields if they don't exist
+        if "is_escalated" not in columns:
+            conn.execute(text("ALTER TABLE complaints ADD COLUMN is_escalated TINYINT(1) DEFAULT 0"))
+            print("Database migration: Added is_escalated column to complaints table.")
+        if "rating" not in columns:
+            conn.execute(text("ALTER TABLE complaints ADD COLUMN rating INT DEFAULT NULL"))
+            print("Database migration: Added rating column to complaints table.")
+        if "feedback" not in columns:
+            conn.execute(text("ALTER TABLE complaints ADD COLUMN feedback TEXT DEFAULT NULL"))
+            print("Database migration: Added feedback column to complaints table.")
+        if "assigned_officer" not in columns:
+            conn.execute(text("ALTER TABLE complaints ADD COLUMN assigned_officer VARCHAR(100) DEFAULT 'Officer Sharma'"))
+            print("Database migration: Added assigned_officer column to complaints table.")
+        conn.commit()
+except RuntimeError:
+    pass  # non-MySQL dialect — nothing to migrate
+except Exception as e:
+    print(f"Error checking/adding missing columns: {e}")
 
 app = FastAPI(
     title="AI-Powered Grievance Lodging & Tracking System API",
@@ -83,3 +121,32 @@ def classify_complaint_endpoint(payload: ClassifyRequest):
         location=payload.location
     )
     return result
+
+@app.get("/api/heatmap")
+def get_heatmap_api(db: Session = Depends(get_db)):
+    """
+    Returns only complaints that contain valid coordinates.
+    """
+    from app.models.complaint import Complaint
+    from datetime import datetime
+    complaints = (
+        db.query(Complaint)
+        .filter(Complaint.latitude.isnot(None), Complaint.longitude.isnot(None))
+        .all()
+    )
+    return [
+        {
+            "_id": str(c.id),
+            "id": c.id,
+            "category": c.category or "Other",
+            "department": c.department or "Other",
+            "priority": c.priority or "Medium",
+            "status": c.status or "Submitted",
+            "latitude": c.latitude,
+            "longitude": c.longitude,
+            "description": c.description or "",
+            "address": c.address or "",
+            "createdAt": c.created_at.isoformat() if isinstance(c.created_at, datetime) else str(c.created_at)
+        }
+        for c in complaints
+    ]

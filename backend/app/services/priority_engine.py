@@ -47,7 +47,8 @@ def calculate_priority(
     category: str,
     created_at: datetime,
     status: str,
-    ai_metadata: dict
+    ai_metadata: dict,
+    is_escalated: bool = False
 ) -> dict:
     """
     Computes a transparent rule-based priority score between 0 and 100.
@@ -102,10 +103,13 @@ def calculate_priority(
         
     # 7. Time Pending
     time_pending_score = 0
-    if status != "Resolved" and created_at:
+    if status not in ["Resolved", "Closed"] and created_at:
         hours_pending = (datetime.now() - created_at).total_seconds() / 3600
         # 1 point per 24 hours pending, capped at 5
         time_pending_score = min(MAX_TIME_PENDING, int(hours_pending // 24))
+
+    # 8. SLA Escalation Boost (+20 points)
+    escalation_score = 20 if is_escalated else 0
         
     # Total Score Calculation
     total_score = (
@@ -115,7 +119,8 @@ def calculate_priority(
         urgency_score +
         duplicates_score +
         location_score +
-        time_pending_score
+        time_pending_score +
+        escalation_score
     )
     total_score = max(0, min(100, total_score))
     
@@ -139,6 +144,8 @@ def calculate_priority(
         reasons.append(f"linked to multiple similar reports ({duplicate_count} duplicate(s) detected)")
     if location_score > 0:
         reasons.append("near critical public location/infrastructure")
+    if is_escalated:
+        reasons.append("SLA breach escalation boost")
         
     if reasons:
         reason_explanation = f"Complaint prioritized due to: {', and '.join(reasons)}."
@@ -155,7 +162,8 @@ def calculate_priority(
             "urgency": urgency_score,
             "duplicates": duplicates_score,
             "location": location_score,
-            "timePending": time_pending_score
+            "timePending": time_pending_score,
+            "escalationBoost": escalation_score
         },
         "reason": reason_explanation
     }

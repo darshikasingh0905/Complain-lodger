@@ -30,6 +30,10 @@ class EvidenceAuditResult(BaseModel):
     confidence: float
     source: str  # 'ollama_vision' or 'fallback'
 
+class ConfirmResolutionRequest(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    feedback: Optional[str] = None
+
 class ComplaintResponse(ComplaintBase):
     id: int
     department: Optional[str] = None
@@ -43,6 +47,10 @@ class ComplaintResponse(ComplaintBase):
     priorityScore: Optional[int] = None
     priorityLevel: Optional[str] = None
     priorityBreakdown: Optional[dict] = None
+    is_escalated: Optional[bool] = False
+    rating: Optional[int] = None
+    feedback: Optional[str] = None
+    assigned_officer: Optional[str] = None
     evidence_verdict: Optional[str] = None
     evidence_reason: Optional[str] = None
     evidence_confidence: Optional[float] = None
