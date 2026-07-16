@@ -19,17 +19,28 @@ const KEY = "women_safety_mode";
 const SafetyModeContext = createContext(null);
 
 export const SafetyModeProvider = ({ children }) => {
-  const { userRole } = useAuth();
+  const { userRole, isAuthenticated } = useAuth();
   const [safetyMode, setSafetyMode] = useState(
     () => localStorage.getItem(KEY) === "1"
   );
 
-  // Apply/remove the pink theme. Admins keep the standard theme.
+  // Apply/remove the pink theme — ONLY for a signed-in citizen. Admins and
+  // logged-out visitors (login pages, public scoreboard) always see the
+  // standard government theme.
   useEffect(() => {
-    const enabled = safetyMode && userRole !== "admin";
+    const enabled = safetyMode && isAuthenticated && userRole === "citizen";
     document.documentElement.classList.toggle("theme-safety", enabled);
     return () => document.documentElement.classList.remove("theme-safety");
-  }, [safetyMode, userRole]);
+  }, [safetyMode, userRole, isAuthenticated]);
+
+  // Women Safety Mode is a per-session choice: logging out switches the
+  // portal back to green and clears the persisted flag.
+  useEffect(() => {
+    if (!isAuthenticated && safetyMode) {
+      setSafetyMode(false);
+      localStorage.setItem(KEY, "0");
+    }
+  }, [isAuthenticated, safetyMode]);
 
   const toggleSafetyMode = useCallback(() => {
     setSafetyMode((prev) => {
