@@ -126,12 +126,27 @@ root/
 ### Prerequisites
 *   Node.js v20+
 *   Python 3.10+
-*   MySQL 8.0+ running locally on port 3306
-*   Ollama running locally
+*   MySQL 8.0+ *(optional — the backend automatically falls back to a local
+    SQLite database when MySQL is unreachable, so the demo runs with zero DB setup)*
+*   Ollama *(optional — a deterministic keyword classifier and vision-audit
+    fallback are used when Ollama is offline)*
+
+### Demo Credentials
+| Role | Login | Notes |
+|---|---|---|
+| Citizen | Aadhaar `123456789012` + mobile `9876543210` | OTP shown on-screen in dev mode |
+| Super Admin | `admin` / `admin123` | Sees all departments + Departments/Users/Settings |
+| Water Supply Admin | `water_admin` / `water123` | Scoped to Water Supply Department |
+| Electricity Admin | `electricity_admin` / `electricity123` | Scoped to Electricity Department |
+| Roads & Drainage Admin | `roads_admin` / `roads123` | Scoped to Roads and Drainage |
+| Solid Waste Admin | `swm_admin` / `swm123` | Scoped to Solid Waste Management |
+| Public Health Admin | `health_admin` / `health123` | Scoped to Public Health |
+| Traffic Police Admin | `traffic_admin` / `traffic123` | Scoped to Traffic Police |
 
 ### Backend Setup
 1.  Navigate to folder: `cd backend`
-2.  Set up environment file `.env` using reference config.
+2.  *(Optional)* Create `.env` with `DATABASE_URL=mysql+pymysql://user:pass@localhost:3306/grievance_system`.
+    If MySQL is not reachable, the server falls back to `backend/grievance_local.db` (SQLite) automatically.
 3.  Configure virtual environment:
     ```bash
     python -m venv venv

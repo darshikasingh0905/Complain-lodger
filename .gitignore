@@ -23,3 +23,11 @@ frontend/dist-ssr/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Backend runtime artifacts
+backend/services/.env
+backend/grievance_local.db
+backend/app/uploads/
+
+# Local demo credentials (never commit)
+CREDENTIALS.md
