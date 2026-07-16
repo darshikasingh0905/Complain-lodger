@@ -7,6 +7,8 @@ function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const currentPath = location.pathname;
+  const searchParams = new URLSearchParams(location.search);
+  const currentTab = searchParams.get('tab');
   const { isAuthenticated, userRole, userData, logout } = useAuth();
 
   // Define navigation items based on role
@@ -64,7 +66,11 @@ function Navbar() {
               <div className="flex items-center gap-1.5 bg-slate-900/60 p-1 rounded-xl border border-white/5">
                 {navItems.map((item) => {
                   const Icon = item.icon;
-                  const isActive = currentPath === item.path;
+                  // Smart active: /map link highlights when on heatmap tab; /admin link highlights for other tabs
+                  const isActive =
+                    (item.path === '/map' && currentPath === '/admin' && currentTab === 'heatmap') ||
+                    (item.path === '/admin' && currentPath === '/admin' && currentTab !== 'heatmap') ||
+                    (item.path !== '/map' && item.path !== '/admin' && currentPath === item.path);
                   return (
                     <Link
                       key={item.path}

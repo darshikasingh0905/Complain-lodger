@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useComplaints } from '../context/ComplaintContext';
 import {
   LayoutDashboard,
@@ -30,6 +31,8 @@ import {
   Zap,
   Star
 } from 'lucide-react';
+import AnalyticsDashboard from './AnalyticsDashboard';
+import Heatmap from './admin/Heatmap';
 
 const STATUS_OPTIONS = ['Submitted', 'Assigned', 'In Progress', 'Resolved', 'Closed'];
 const DEPARTMENTS = [
@@ -46,6 +49,18 @@ const DEPARTMENTS = [
 function AdminPanel() {
   const { complaints, loadingComplaints, updateStatus, reclassifyComplaint, auditEvidence } = useComplaints();
   const [selectedComplaint, setSelectedComplaint] = useState(null);
+
+  const location = useLocation();
+  const searchParams = React.useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const initialTab = searchParams.get('tab') || 'complaints';
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  React.useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && ['complaints', 'analytics', 'heatmap'].includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
 
   // Filters
   const [statusFilter, setStatusFilter]   = useState('All');
@@ -164,7 +179,35 @@ function AdminPanel() {
   return (
     <div className="max-w-7xl mx-auto w-full px-4 pb-12 space-y-6">
       
-      {/* Metrics Bar */}
+      {/* Admin Tab Bar */}
+      <div className="flex items-center gap-2 bg-slate-900/60 p-1.5 rounded-2xl border border-white/5 w-fit">
+        {[
+          { id: 'complaints', label: 'Grievance List', icon: FileText },
+          { id: 'analytics', label: 'Predictive Analytics', icon: BarChart2 },
+          { id: 'heatmap', label: 'Hotspot Heatmap', icon: MapPin }
+        ].map(tab => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+                isActive
+                  ? 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-lg shadow-sky-600/10'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === 'complaints' && (
+        <>
+          {/* Metrics Bar */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="glass-panel p-4.5 rounded-2xl border border-white/5 text-left relative overflow-hidden">
           <div className="absolute top-0 left-0 w-1.5 h-full bg-sky-500" />
@@ -779,6 +822,12 @@ function AdminPanel() {
 
         </div>
       )}
+        </>
+      )}
+
+      {activeTab === 'analytics' && <AnalyticsDashboard />}
+
+      {activeTab === 'heatmap' && <Heatmap />}
 
     </div>
   );

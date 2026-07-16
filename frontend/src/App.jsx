@@ -22,7 +22,6 @@ import TrackComplaint from './pages/TrackComplaint';
 // Protected Pages (Admin)
 import AdminPanel from './pages/AdminPanel';
 import EvidenceAnalyzer from './pages/EvidenceAnalyzer';
-import HeatmapView from './pages/HeatmapView';
 
 function App() {
   return (
@@ -92,7 +91,7 @@ function App() {
                 path="/map"
                 element={
                   <RoleGuard allowedRoles={['admin']}>
-                    <HeatmapView />
+                    <Navigate to="/admin?tab=heatmap" replace />
                   </RoleGuard>
                 }
               />
