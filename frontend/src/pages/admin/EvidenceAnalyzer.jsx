@@ -153,7 +153,7 @@ export default function EvidenceAnalyzer() {
     : null;
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-8 animate-fade-in">
+    <div className="w-full space-y-8 animate-fade-in">
       {/* ── Page header ── */}
       <div className="text-center space-y-2">
         <div className="inline-flex items-center gap-2 bg-primary-light text-primary text-xs font-semibold px-3 py-1.5 rounded-full mb-1">
