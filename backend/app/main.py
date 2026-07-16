@@ -107,3 +107,32 @@ def classify_complaint_endpoint(payload: ClassifyRequest):
         location=payload.location
     )
     return result
+
+@app.get("/api/heatmap")
+def get_heatmap_api(db: Session = Depends(get_db)):
+    """
+    Returns only complaints that contain valid coordinates.
+    """
+    from app.models.complaint import Complaint
+    from datetime import datetime
+    complaints = (
+        db.query(Complaint)
+        .filter(Complaint.latitude.isnot(None), Complaint.longitude.isnot(None))
+        .all()
+    )
+    return [
+        {
+            "_id": str(c.id),
+            "id": c.id,
+            "category": c.category or "Other",
+            "department": c.department or "Other",
+            "priority": c.priority or "Medium",
+            "status": c.status or "Submitted",
+            "latitude": c.latitude,
+            "longitude": c.longitude,
+            "description": c.description or "",
+            "address": c.address or "",
+            "createdAt": c.created_at.isoformat() if isinstance(c.created_at, datetime) else str(c.created_at)
+        }
+        for c in complaints
+    ]
