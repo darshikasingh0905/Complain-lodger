@@ -1,3 +1,4 @@
+import axios from "axios";
 import {
   getLocalStorageUsers,
   getLocalStorageAdmins,
@@ -6,6 +7,25 @@ import {
   removeCurrentSessionUser,
   hashText,
 } from "../utils/localStorageHelpers";
+import { setAuthToken, clearAuthToken } from "./tokenStore";
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+
+/**
+ * Exchange a locally-verified identity for a backend-signed JWT.
+ * Best-effort: when the backend is offline the app keeps working in its
+ * localStorage fallback mode, just without a token.
+ */
+const fetchJwt = async (path, body) => {
+  try {
+    const res = await axios.post(`${API_URL}${path}`, body, { timeout: 6000 });
+    if (res.data?.access_token) setAuthToken(res.data.access_token);
+  } catch (err) {
+    // Offline backend or registry mismatch — degrade gracefully.
+    console.warn("[auth] JWT exchange skipped:", err?.message);
+    clearAuthToken();
+  }
+};
 
 /**
  * Service layer simulating authentication API calls.
@@ -158,6 +178,13 @@ export const authService = {
     };
 
     setCurrentSessionUser(sessionPayload);
+
+    // Real JWT: exchange the OTP-verified identity for a signed token.
+    await fetchJwt("/auth/citizen/login", {
+      aadhaar: cleanAadhaar,
+      mobile,
+    });
+
     return sessionPayload;
   },
 
@@ -208,6 +235,10 @@ export const authService = {
     };
 
     setCurrentSessionUser(sessionPayload);
+
+    // Real JWT: validate credentials server-side too and store the token.
+    await fetchJwt("/auth/admin/login", { username, password });
+
     return sessionPayload;
   },
 
@@ -215,6 +246,7 @@ export const authService = {
   logout: async () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     removeCurrentSessionUser();
+    clearAuthToken(); // JWT dies with the session
     return { success: true };
   },
 
@@ -229,5 +261,33 @@ export const authService = {
     if (!import.meta.env.DEV) return null;
     const pending = readJson(sessionStorage, OTP_STORE_KEY);
     return pending?.devOtp || null;
+  },
+
+  /**
+   * Silent JWT recovery for a restored session that has no token (e.g. the
+   * backend was offline at login, or the session predates the JWT rollout).
+   * Citizens can be re-issued a token from their session identity; admins
+   * cannot (no stored password) and must sign in again.
+   *
+   * Returns: "ok" (token restored) · "offline" (backend unreachable — keep
+   * the session, offline mode) · "invalid" (backend rejected — force logout).
+   */
+  refreshToken: async (session) => {
+    if (!session?.isAuthenticated) return "invalid";
+    if (session.role !== "citizen") return "invalid"; // admins must re-login
+    try {
+      const res = await axios.post(
+        `${API_URL}/auth/citizen/login`,
+        { aadhaar: session.user.aadhaar, mobile: session.user.mobile },
+        { timeout: 6000 }
+      );
+      if (res.data?.access_token) {
+        setAuthToken(res.data.access_token);
+        return "ok";
+      }
+      return "invalid";
+    } catch (err) {
+      return err?.response ? "invalid" : "offline";
+    }
   },
 };

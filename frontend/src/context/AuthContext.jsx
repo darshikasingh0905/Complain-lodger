@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect } from 'react';
 import { authService } from '../services/authService';
+import { getAuthToken } from '../services/tokenStore';
 import { initLocalStorageData } from '../utils/localStorageHelpers';
 
 export const AuthContext = createContext(null);
@@ -17,6 +18,19 @@ export const AuthProvider = ({ children }) => {
       await initLocalStorageData();
       const session = authService.getCurrentUser();
       if (session && session.isAuthenticated) {
+        // JWT guard: a restored session without a token must be re-validated.
+        // Citizens get a silent re-issue; if the backend rejects it (or the
+        // user is an admin, who must re-enter a password) the session is
+        // dropped and the route guards redirect to /login.
+        if (!getAuthToken()) {
+          const result = await authService.refreshToken(session);
+          if (result === "invalid") {
+            await authService.logout();
+            setLoading(false);
+            return;
+          }
+          // "ok" → token restored · "offline" → keep session in fallback mode
+        }
         setIsAuthenticated(true);
         setUserRole(session.role);
         setUserData(session.user);

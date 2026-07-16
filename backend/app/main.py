@@ -1,11 +1,14 @@
 import os
 from fastapi import FastAPI, Depends
+from app.services.security import require_auth
+from app.routes.auth_routes import router as auth_router
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
 from app.database.db import get_db, Base, engine
 from app.routes.complaint_routes import router as complaint_router
+from app.routes.assistant_routes import router as assistant_router
 from app.models.notification import Notification
 
 # Autogenerate database tables defined in sqlalchemy models mapping on boot
@@ -52,6 +55,27 @@ except RuntimeError:
 except Exception as e:
     print(f"Error checking/adding missing columns: {e}")
 
+# Dialect-agnostic migration for newer columns (works on MySQL AND the SQLite
+# fallback, whose existing db files are not updated by create_all)
+try:
+    from sqlalchemy import inspect as sa_inspect
+    inspector = sa_inspect(engine)
+    existing_cols = {col["name"] for col in inspector.get_columns("complaints")}
+    NEW_COLUMNS = {
+        "fix_image_url": "VARCHAR(255)",
+        "fix_verdict": "VARCHAR(20)",
+        "fix_reason": "TEXT",
+        "fix_confidence": "FLOAT",
+    }
+    with engine.connect() as conn:
+        for col, ddl in NEW_COLUMNS.items():
+            if col not in existing_cols:
+                conn.execute(text(f"ALTER TABLE complaints ADD COLUMN {col} {ddl}"))
+                print(f"Database migration: Added {col} column to complaints table.")
+        conn.commit()
+except Exception as e:
+    print(f"Error running fix-verification column migration: {e}")
+
 app = FastAPI(
     title="AI-Powered Grievance Lodging & Tracking System API",
     description="Backend API for lodging grievances, classifications, visual evidence checks, and visual hotspots analytics.",
@@ -72,8 +96,13 @@ UPLOAD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads"
 os.makedirs(UPLOAD_PATH, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_PATH), name="uploads")
 
-# Register routes group
-app.include_router(complaint_router, prefix="/api")
+# Register routes group.
+# JWT protection: complaint + assistant routers require a Bearer token issued
+# by /api/auth/*. Public surface: /api/auth, /api/health, /api/scoreboard,
+# /uploads (image display), /api/heatmap and /api/classify (demo utilities).
+app.include_router(auth_router, prefix="/api")
+app.include_router(complaint_router, prefix="/api", dependencies=[Depends(require_auth)])
+app.include_router(assistant_router, prefix="/api", dependencies=[Depends(require_auth)])
 
 @app.get("/")
 def read_root():
@@ -121,6 +150,16 @@ def classify_complaint_endpoint(payload: ClassifyRequest):
         location=payload.location
     )
     return result
+
+@app.get("/api/scoreboard")
+def get_public_scoreboard(db: Session = Depends(get_db)):
+    """
+    PUBLIC accountability scoreboard (no login required): ranks every
+    department by resolution rate, speed, SLA compliance and citizen ratings.
+    """
+    from app.services import scoreboard_service
+    return scoreboard_service.build_scoreboard(db)
+
 
 @app.get("/api/heatmap")
 def get_heatmap_api(db: Session = Depends(get_db)):
