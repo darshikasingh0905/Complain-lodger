@@ -194,6 +194,35 @@ def get_complaints(db: Session, department: Optional[str] = None, status: Option
         query = query.filter(Complaint.status == status)
     return query.order_by(Complaint.created_at.desc()).all()
 
+def get_complaints_by_admin_dept(db: Session, admin_department: str, status: Optional[str] = None) -> List[Complaint]:
+    """Retrieves list of complaints filtered flexibly by admin department mapping."""
+    refresh_pending_times(db)
+    query = db.query(Complaint)
+    
+    name = admin_department.lower().strip()
+    dept_filters = []
+    if "roads" in name:
+        dept_filters.append(Complaint.department == "Roads and Drainage")
+    elif "electricity" in name:
+        dept_filters.append(Complaint.department == "Electricity Department")
+    elif "water" in name:
+        dept_filters.append(Complaint.department == "Water Supply Department")
+    elif "sanitation" in name or "garbage" in name or "solid waste" in name:
+        dept_filters.append(Complaint.department == "Solid Waste Management")
+    elif "health" in name:
+        dept_filters.append(Complaint.department == "Public Health")
+    elif "transport" in name or "traffic" in name:
+        dept_filters.append(Complaint.department == "Traffic Police")
+    else:
+        dept_filters.append(Complaint.department.ilike(f"%{admin_department}%"))
+        
+    query = query.filter(or_(*dept_filters))
+    
+    if status:
+        query = query.filter(Complaint.status == status)
+        
+    return query.order_by(Complaint.created_at.desc()).all()
+
 def get_complaint_by_id(db: Session, complaint_id: int) -> Optional[Complaint]:
     """Queries database for grievance by integer ID."""
     refresh_pending_times(db)
@@ -323,23 +352,44 @@ def update_evidence_audit(
     
     return db_obj
 
-def get_analytics_data(db: Session):
+def get_analytics_data(db: Session, admin_department: Optional[str] = None):
     """
     Computes chronological trends, department counts, priority ratios,
     and emerging high-risk hotspot surges by comparing complaint velocities.
     """
     refresh_pending_times(db)
-    from sqlalchemy import func, and_
+    from sqlalchemy import func, and_, or_
     from datetime import datetime, timedelta
+    
+    # Resolve department filters if provided
+    dept_filters = []
+    if admin_department:
+        name = admin_department.lower().strip()
+        if "roads" in name:
+            dept_filters.append(Complaint.department == "Roads and Drainage")
+        elif "electricity" in name:
+            dept_filters.append(Complaint.department == "Electricity Department")
+        elif "water" in name:
+            dept_filters.append(Complaint.department == "Water Supply Department")
+        elif "sanitation" in name or "garbage" in name or "solid waste" in name:
+            dept_filters.append(Complaint.department == "Solid Waste Management")
+        elif "health" in name:
+            dept_filters.append(Complaint.department == "Public Health")
+        elif "transport" in name or "traffic" in name:
+            dept_filters.append(Complaint.department == "Traffic Police")
+        else:
+            dept_filters.append(Complaint.department.ilike(f"%{admin_department}%"))
     
     # 1. Chronological Trend (last 14 days)
     today = datetime.now().date()
     start_date = today - timedelta(days=13)
     
     # Query daily counts
+    daily_query = db.query(func.date(Complaint.created_at).label("day"), func.count(Complaint.id).label("count"))
+    if dept_filters:
+        daily_query = daily_query.filter(or_(*dept_filters))
     daily_results = (
-        db.query(func.date(Complaint.created_at).label("day"), func.count(Complaint.id).label("count"))
-        .filter(Complaint.created_at >= datetime.combine(start_date, datetime.min.time()))
+        daily_query.filter(Complaint.created_at >= datetime.combine(start_date, datetime.min.time()))
         .group_by(func.date(Complaint.created_at))
         .all()
     )
@@ -361,9 +411,11 @@ def get_analytics_data(db: Session):
         })
         
     # 2. General Department Breakdown
+    dept_query = db.query(Complaint.department, func.count(Complaint.id).label("count"))
+    if dept_filters:
+        dept_query = dept_query.filter(or_(*dept_filters))
     dept_results = (
-        db.query(Complaint.department, func.count(Complaint.id).label("count"))
-        .group_by(Complaint.department)
+        dept_query.group_by(Complaint.department)
         .all()
     )
     departments = [
@@ -372,9 +424,11 @@ def get_analytics_data(db: Session):
     ]
     
     # 3. Priority levels
+    priority_query = db.query(Complaint.priority, func.count(Complaint.id).label("count"))
+    if dept_filters:
+        priority_query = priority_query.filter(or_(*dept_filters))
     priority_results = (
-        db.query(Complaint.priority, func.count(Complaint.id).label("count"))
-        .group_by(Complaint.priority)
+        priority_query.group_by(Complaint.priority)
         .all()
     )
     priorities = [
@@ -388,15 +442,17 @@ def get_analytics_data(db: Session):
     ten_days_ago = datetime.now() - timedelta(days=10)
     
     # Group by location/area and department to locate specific hotspot issues
+    hotspots_query = db.query(
+        Complaint.department,
+        Complaint.address,
+        func.count(Complaint.id).label("total_count"),
+        func.sum(func.if_(Complaint.created_at >= three_days_ago, 1, 0)).label("recent_count"),
+        func.sum(func.if_(and_(Complaint.created_at >= ten_days_ago, Complaint.created_at < three_days_ago), 1, 0)).label("prev_count")
+    )
+    if dept_filters:
+        hotspots_query = hotspots_query.filter(or_(*dept_filters))
     hotspots_data = (
-        db.query(
-            Complaint.department,
-            Complaint.address,
-            func.count(Complaint.id).label("total_count"),
-            func.sum(func.if_(Complaint.created_at >= three_days_ago, 1, 0)).label("recent_count"),
-            func.sum(func.if_(and_(Complaint.created_at >= ten_days_ago, Complaint.created_at < three_days_ago), 1, 0)).label("prev_count")
-        )
-        .group_by(Complaint.department, Complaint.address)
+        hotspots_query.group_by(Complaint.department, Complaint.address)
         .all()
     )
     

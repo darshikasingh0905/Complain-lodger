@@ -12,8 +12,17 @@ from app.models.notification import Notification
 try:
     Base.metadata.create_all(bind=engine)
     print("Database tables synchronized successfully.")
+    
+    # Run database seeder if complaints is empty
+    from app.database.db import SessionLocal
+    db_session = SessionLocal()
+    try:
+        from app.database.seeder import seed_database_if_empty
+        seed_database_if_empty(db_session)
+    finally:
+        db_session.close()
 except Exception as err:
-    print(f"Error running database synchronization: {err}")
+    print(f"Error running database synchronization or seeder: {err}")
 
 # Check and add missing columns to complaints table
 try:

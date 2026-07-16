@@ -19,28 +19,51 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 
 @router.get("/map-data")
-def get_map_data(db: Session = Depends(get_db)):
+def get_map_data(
+    role: Optional[str] = None,
+    department: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
     """
     Returns a lean payload of all complaints that have GPS coordinates,
     used by the frontend Leaflet heatmap to render pins and density layers.
     Only returns fields required for map rendering — no large text bodies.
     """
     from app.models.complaint import Complaint
-    complaints = (
-        db.query(
-            Complaint.id,
-            Complaint.latitude,
-            Complaint.longitude,
-            Complaint.department,
-            Complaint.priority,
-            Complaint.status,
-            Complaint.description,
-            Complaint.address,
-            Complaint.category,
-        )
-        .filter(Complaint.latitude.isnot(None), Complaint.longitude.isnot(None))
-        .all()
-    )
+    from sqlalchemy import or_
+    
+    query = db.query(
+        Complaint.id,
+        Complaint.latitude,
+        Complaint.longitude,
+        Complaint.department,
+        Complaint.priority,
+        Complaint.status,
+        Complaint.description,
+        Complaint.address,
+        Complaint.category,
+    ).filter(Complaint.latitude.isnot(None), Complaint.longitude.isnot(None))
+    
+    if role == "department_admin" and department:
+        name = department.lower().strip()
+        dept_filters = []
+        if "roads" in name:
+            dept_filters.append(Complaint.department == "Roads and Drainage")
+        elif "electricity" in name:
+            dept_filters.append(Complaint.department == "Electricity Department")
+        elif "water" in name:
+            dept_filters.append(Complaint.department == "Water Supply Department")
+        elif "sanitation" in name or "garbage" in name or "solid waste" in name:
+            dept_filters.append(Complaint.department == "Solid Waste Management")
+        elif "health" in name:
+            dept_filters.append(Complaint.department == "Public Health")
+        elif "transport" in name or "traffic" in name:
+            dept_filters.append(Complaint.department == "Traffic Police")
+        else:
+            dept_filters.append(Complaint.department.ilike(f"%{department}%"))
+        query = query.filter(or_(*dept_filters))
+        
+    complaints = query.all()
     return [
         {
             "id": c.id,
@@ -55,6 +78,7 @@ def get_map_data(db: Session = Depends(get_db)):
         }
         for c in complaints
     ]
+
 
 @router.post("/submit", response_model=ComplaintResponse, status_code=status.HTTP_201_CREATED)
 def submit_complaint_form(
@@ -126,13 +150,16 @@ def create_new_complaint(complaint: ComplaintCreate, db: Session = Depends(get_d
 
 @router.get("/", response_model=List[ComplaintResponse])
 def read_all_complaints(
+    role: Optional[str] = None,
     department: Optional[str] = None, 
     status: Optional[str] = None, 
     db: Session = Depends(get_db)
 ):
     """
-    List all filed grievances. Supports optional parameters 'department' or 'status'.
+    List all filed grievances. Supports optional parameters 'role', 'department' or 'status'.
     """
+    if role == "department_admin" and department:
+        return service.get_complaints_by_admin_dept(db, admin_department=department, status=status)
     return service.get_complaints(db, department=department, status=status)
 
 @router.get("/track/{query}", response_model=List[ComplaintResponse])
@@ -263,12 +290,18 @@ def analyze_evidence(complaint_id: int, db: Session = Depends(get_db)):
         )
 
 @router.get("/trends")
-def get_complaint_trends(db: Session = Depends(get_db)):
+def get_complaint_trends(
+    role: Optional[str] = None,
+    department: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
     """
     Retrieves chronological trending data, department frequencies, priority metrics,
     and emerging high-risk hotspot warning zones.
     """
     try:
+        if role == "department_admin" and department:
+            return service.get_analytics_data(db, admin_department=department)
         return service.get_analytics_data(db)
     except Exception as e:
         raise HTTPException(
@@ -288,6 +321,46 @@ def get_citizen_notifications(phone: str, db: Session = Depends(get_db)):
         .order_by(Notification.created_at.desc())
         .all()
     )
+    return [n.to_dict() for n in notifications]
+
+@router.get("/admin-notifications", response_model=List[dict])
+def get_admin_notifications(
+    role: Optional[str] = None,
+    department: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves notifications filtered by department for admin roles.
+    If role == super_admin, returns all notifications.
+    If role == department_admin, returns only notifications for complaints in the admin's department.
+    """
+    from app.models.notification import Notification
+    from app.models.complaint import Complaint
+    from sqlalchemy import or_
+    
+    query = db.query(Notification)
+    if role == "department_admin" and department:
+        name = department.lower().strip()
+        dept_filters = []
+        if "roads" in name:
+            dept_filters.append(Complaint.department == "Roads and Drainage")
+        elif "electricity" in name:
+            dept_filters.append(Complaint.department == "Electricity Department")
+        elif "water" in name:
+            dept_filters.append(Complaint.department == "Water Supply Department")
+        elif "sanitation" in name or "garbage" in name or "solid waste" in name:
+            dept_filters.append(Complaint.department == "Solid Waste Management")
+        elif "health" in name:
+            dept_filters.append(Complaint.department == "Public Health")
+        elif "transport" in name or "traffic" in name:
+            dept_filters.append(Complaint.department == "Traffic Police")
+        else:
+            dept_filters.append(Complaint.department.ilike(f"%{department}%"))
+            
+        complaint_ids = db.query(Complaint.id).filter(or_(*dept_filters)).subquery()
+        query = query.filter(Notification.complaint_id.in_(complaint_ids))
+        
+    notifications = query.order_by(Notification.created_at.desc()).all()
     return [n.to_dict() for n in notifications]
 
 @router.patch("/notifications/{notification_id}/read", response_model=dict)
