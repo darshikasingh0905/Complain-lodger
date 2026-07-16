@@ -355,6 +355,64 @@ def analyze_evidence(complaint_id: int, db: Session = Depends(get_db)):
             detail=f"Evidence analysis failed: {str(e)}"
         )
 
+@router.post("/{complaint_id}/resolve-with-proof", response_model=ComplaintResponse)
+def resolve_with_proof(
+    complaint_id: int,
+    fix_image: UploadFile = File(...),
+    force: bool = Form(False),
+    db: Session = Depends(get_db)
+):
+    """
+    Closed-loop resolution (USP): the admin must upload an AFTER photo of the
+    fix. The vision AI compares it with the citizen's BEFORE evidence and
+    verdicts FIXED / NOT_FIXED / UNCERTAIN. A NOT_FIXED verdict blocks the
+    Resolved transition unless force=true is passed (explicit override).
+    """
+    complaint = service.get_complaint_by_id(db, complaint_id)
+    if not complaint:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Complaint with ID {complaint_id} does not exist"
+        )
+
+    # Save the fix photo alongside the original evidence uploads
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    file_ext = os.path.splitext(fix_image.filename or "fix.jpg")[1] or ".jpg"
+    unique_filename = f"fix_{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(UPLOAD_DIR, unique_filename)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(fix_image.file, buffer)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save fix photo: {str(e)}"
+        )
+    fix_image_url = f"uploads/{unique_filename}"
+
+    # Before/after vision audit (before image may be absent for safety reports)
+    before_path = None
+    if complaint.image_url:
+        candidate = os.path.join(BASE_DIR, complaint.image_url.replace("/", os.sep))
+        if os.path.exists(candidate):
+            before_path = candidate
+
+    audit = ai_service.verify_fix(before_path, file_path, complaint.description or "")
+    print(f"[Fix Verify] Complaint #{complaint_id}: {audit['verdict']} "
+          f"({audit['confidence']:.0%}) via '{audit.get('source', 'unknown')}'")
+
+    updated = service.resolve_with_proof(
+        db,
+        complaint_id,
+        fix_image_url=fix_image_url,
+        verdict=audit["verdict"],
+        reason=audit["reason"],
+        confidence=audit["confidence"],
+        force=force,
+    )
+    return updated
+
+
 @router.get("/notifications/{phone}", response_model=List[dict])
 def get_citizen_notifications(phone: str, db: Session = Depends(get_db)):
     """

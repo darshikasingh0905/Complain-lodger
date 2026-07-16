@@ -6,6 +6,7 @@ import {
   confirmResolution as confirmResolutionApi,
   classifyComplaintAI,
   auditEvidenceAI,
+  resolveWithProof as resolveWithProofApi,
   checkApiOnline,
 } from "../services/complaintService";
 import useAuth from "../hooks/useAuth";
@@ -64,6 +65,16 @@ export const ComplaintProvider = ({ children }) => {
     return updated;
   }, []);
 
+  /**
+   * Resolve with photo proof: uploads the fix photo, runs the before/after
+   * vision audit, and (if verified or forced) moves the ticket to Resolved.
+   */
+  const resolveWithProof = useCallback(async (id, fixImageFile, force = false) => {
+    const updated = await resolveWithProofApi(id, fixImageFile, force);
+    replaceRecord(updated);
+    return updated;
+  }, []);
+
   /** Re-run AI classification. */
   const reclassifyComplaint = useCallback(async (id) => {
     const updated = await classifyComplaintAI(id);
@@ -90,6 +101,7 @@ export const ComplaintProvider = ({ children }) => {
     addComplaint,
     updateStatus,
     confirmResolution,
+    resolveWithProof,
     reclassifyComplaint,
     auditEvidence,
     refreshComplaints,

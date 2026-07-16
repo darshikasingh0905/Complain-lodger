@@ -41,6 +41,12 @@ class Complaint(Base):
     evidence_reason = Column(Text, nullable=True)
     evidence_confidence = Column(Float, nullable=True)
 
+    # Fix Verification Fields (before/after Vision LLM audit at resolution time)
+    fix_image_url = Column(String(255), nullable=True)
+    fix_verdict = Column(String(20), nullable=True)  # FIXED, NOT_FIXED, UNCERTAIN
+    fix_reason = Column(Text, nullable=True)
+    fix_confidence = Column(Float, nullable=True)
+
     # Lifecycle Status: Submitted, Assigned, In Progress, Resolved
     status = Column(String(30), nullable=False, default="Submitted")
     
@@ -76,6 +82,10 @@ class Complaint(Base):
             "evidence_verdict": self.evidence_verdict,
             "evidence_reason": self.evidence_reason,
             "evidence_confidence": self.evidence_confidence,
+            "fix_image_url": self.fix_image_url,
+            "fix_verdict": self.fix_verdict,
+            "fix_reason": self.fix_reason,
+            "fix_confidence": self.fix_confidence,
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

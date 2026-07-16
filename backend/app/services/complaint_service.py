@@ -283,6 +283,49 @@ def update_complaint_status(db: Session, complaint_id: int, status: str) -> Opti
     
     return db_obj
 
+def resolve_with_proof(
+    db: Session,
+    complaint_id: int,
+    fix_image_url: str,
+    verdict: str,
+    reason: str,
+    confidence: float,
+    force: bool = False,
+) -> Optional[Complaint]:
+    """
+    Closed-loop resolution: stores the crew's fix photo + the vision AI's
+    before/after verdict. STRICT policy: the complaint only moves to Resolved
+    when the AI positively verdicts FIXED. Both NOT_FIXED and UNCERTAIN
+    (irrelevant photo, unreadable image, or vision model offline) BLOCK the
+    close-out — an admin must explicitly override (force=True) to bypass.
+    """
+    db_obj = db.query(Complaint).filter(Complaint.id == complaint_id).first()
+    if not db_obj:
+        return None
+
+    db_obj.fix_image_url = fix_image_url
+    db_obj.fix_verdict = verdict
+    db_obj.fix_reason = reason
+    db_obj.fix_confidence = confidence
+    db.commit()
+    db.refresh(db_obj)
+
+    if verdict != "FIXED" and not force:
+        # Blocked: the AI is the citizen's advocate. An unrelated or
+        # inconclusive photo is NOT proof of a fix. Notify but keep status.
+        why = "still looks unresolved" if verdict == "NOT_FIXED" else "could not be verified from the photo"
+        msg = (
+            f"Resolution attempt for Ticket #{complaint_id} was BLOCKED — "
+            f"AI fix verification says the issue {why}."
+        )
+        notification_service.create_notification(db, complaint_id, db_obj.citizen_phone, msg, "escalation")
+        print(f"[Fix Verify] Complaint #{complaint_id} close-out BLOCKED ({verdict}): {reason}")
+        return db_obj
+
+    # Positively verified (or explicitly overridden) — normal Resolved transition.
+    return update_complaint_status(db, complaint_id, "Resolved")
+
+
 def confirm_complaint_resolution(db: Session, complaint_id: int, rating: int, feedback: str = None) -> Optional[Complaint]:
     """Confirms complaint resolution, registers feedback & rating, and closes ticket."""
     db_obj = db.query(Complaint).filter(Complaint.id == complaint_id).first()

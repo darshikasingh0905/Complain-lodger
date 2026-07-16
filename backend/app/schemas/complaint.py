@@ -54,6 +54,10 @@ class ComplaintResponse(ComplaintBase):
     evidence_verdict: Optional[str] = None
     evidence_reason: Optional[str] = None
     evidence_confidence: Optional[float] = None
+    fix_image_url: Optional[str] = None
+    fix_verdict: Optional[str] = None
+    fix_reason: Optional[str] = None
+    fix_confidence: Optional[float] = None
     status: str
     created_at: datetime
     updated_at: datetime

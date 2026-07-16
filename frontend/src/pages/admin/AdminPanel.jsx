@@ -3,12 +3,19 @@ import { useComplaints } from "../../context/ComplaintContext";
 import useAuth from "../../hooks/useAuth";
 import useDebounced from "../../hooks/useDebounced";
 import ConfirmModal from "../../components/ui/ConfirmModal";
-import { StatusBadge, PriorityBadge } from "../../components/ui/Badge";
+import ResolveProofModal from "../../components/ui/ResolveProofModal";
+import { StatusBadge, PriorityBadge, SafetyBadge } from "../../components/ui/Badge";
 import { StatCard } from "../../components/ui/StatCard";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { SkeletonWorkspace } from "../../components/ui/Skeleton";
-import { STATUS_OPTIONS, PRIORITY_LEVELS, PRIORITY_COLORS } from "../../constants";
+import {
+  STATUS_OPTIONS,
+  PRIORITY_LEVELS,
+  PRIORITY_COLORS,
+  SAFETY_PINK,
+  isSafetyComplaint,
+} from "../../constants";
 import { formatDate, formatDateTime } from "../../utils/format";
 
 import {
@@ -59,6 +66,7 @@ function AdminPanel() {
     complaints,
     loadingComplaints,
     updateStatus,
+    resolveWithProof,
     reclassifyComplaint,
     auditEvidence,
   } = useComplaints();
@@ -80,6 +88,7 @@ function AdminPanel() {
   const [actionSuccess, setActionSuccess] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingStatusUpdate, setPendingStatusUpdate] = useState(null);
+  const [proofModalOpen, setProofModalOpen] = useState(false);
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [detailTab, setDetailTab] = useState("overview");
@@ -132,13 +141,23 @@ function AdminPanel() {
   };
 
   const handleStatusChange = (id, newStatus) => {
-    // Require confirmation for resolving
+    // Resolving requires photo proof + AI fix verification (closed loop)
     if (newStatus === "Resolved") {
-      setPendingStatusUpdate({ id, newStatus });
-      setConfirmOpen(true);
+      setProofModalOpen(true);
       return;
     }
     performStatusUpdate(id, newStatus);
+  };
+
+  // Called by the proof modal: uploads the fix photo + runs the vision audit
+  const handleResolveWithProof = async (id, file, force) => {
+    const updated = await resolveWithProof(id, file, force);
+    setSelectedComplaint(updated);
+    if (updated.status === "Resolved") {
+      setActionSuccess("Fix verified by AI — complaint resolved and citizen notified.");
+      setTimeout(() => setActionSuccess(null), 4000);
+    }
+    return updated;
   };
 
   // ── AI reclassification ────────────────────────────────────────────────────
@@ -251,7 +270,7 @@ function AdminPanel() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 animate-fade-in">
+    <div className="w-full space-y-8 animate-fade-in">
       {/* ── Page header ── */}
       <PageHeader
         eyebrow="Administration"
@@ -417,6 +436,7 @@ function AdminPanel() {
                 {sortedComplaints.map((complaint, idx) => {
                   const selected =
                     selectedComplaint?.id === complaint.id || selectedIndex === idx;
+                  const safety = isSafetyComplaint(complaint);
 
                   return (
                     <button
@@ -426,6 +446,7 @@ function AdminPanel() {
                         setSelectedIndex(idx);
                         setActionSuccess(null);
                       }}
+                      style={safety ? { borderLeft: `3px solid ${SAFETY_PINK}` } : undefined}
                       className={`w-full text-left rounded-card border p-4 transition-all ${
                         selected
                           ? "border-primary bg-primary-light"
@@ -441,6 +462,7 @@ function AdminPanel() {
                           <p className="mt-1 text-sm text-muted">{complaint.department}</p>
                         </div>
                         <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                          {safety && <SafetyBadge compact />}
                           {complaint.is_escalated && (
                             <span className="badge-error !px-2 !text-[10px]">
                               <ShieldAlert className="w-3 h-3" />
@@ -496,6 +518,9 @@ function AdminPanel() {
                       </h2>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
+                      {isSafetyComplaint(selectedComplaint) && (
+                        <SafetyBadge className="!px-3 !py-1.5 !text-sm" />
+                      )}
                       {selectedComplaint.is_escalated && (
                         <span className="badge-error !px-3 !py-1.5 !text-sm">
                           <ShieldAlert className="w-4 h-4" />
@@ -923,6 +948,61 @@ function AdminPanel() {
                             )}
                         </div>
                       )}
+
+                      {/* Fix proof (closed-loop resolution audit) */}
+                      {selectedComplaint.fixImageFullUrl && (
+                        <div className="inset-panel p-4 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <h4 className="text-sm font-semibold text-text">
+                              Fix Proof — Before / After AI Audit
+                            </h4>
+                            {selectedComplaint.fix_verdict && (
+                              <span
+                                className={
+                                  selectedComplaint.fix_verdict === "FIXED"
+                                    ? "badge-success"
+                                    : selectedComplaint.fix_verdict === "NOT_FIXED"
+                                      ? "badge-error"
+                                      : "badge-warning"
+                                }
+                              >
+                                {selectedComplaint.fix_verdict}
+                                {selectedComplaint.fix_confidence != null &&
+                                  ` · ${Math.round(selectedComplaint.fix_confidence * 100)}%`}
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <p className="text-[10px] text-muted font-bold uppercase mb-1">Before</p>
+                              {selectedComplaint.imagePreview || selectedComplaint.imageFullUrl ? (
+                                <img
+                                  src={selectedComplaint.imagePreview || selectedComplaint.imageFullUrl}
+                                  alt="Before"
+                                  className="w-full h-36 object-cover rounded-lg border border-border bg-surface"
+                                />
+                              ) : (
+                                <div className="w-full h-36 rounded-lg border border-dashed border-border flex items-center justify-center text-[11px] text-muted">
+                                  No before photo
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-muted font-bold uppercase mb-1">After (fix)</p>
+                              <img
+                                src={selectedComplaint.fixImageFullUrl}
+                                alt="After fix"
+                                className="w-full h-36 object-cover rounded-lg border border-border bg-surface"
+                              />
+                            </div>
+                          </div>
+                          {selectedComplaint.fix_reason && (
+                            <p className="text-xs text-muted italic leading-relaxed">
+                              "{selectedComplaint.fix_reason}"
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1024,11 +1104,11 @@ function AdminPanel() {
         </div>
       )}
 
-      {/* Resolve confirmation */}
+      {/* Resolve confirmation (legacy — non-Resolved transitions only) */}
       <ConfirmModal
         open={confirmOpen}
-        title="Mark as Resolved?"
-        message="This will mark the complaint as resolved and notify the citizen. Are you sure the issue has been fixed and verified?"
+        title="Update status?"
+        message="This will update the complaint status and notify the citizen."
         onConfirm={() =>
           pendingStatusUpdate &&
           performStatusUpdate(pendingStatusUpdate.id, pendingStatusUpdate.newStatus)
@@ -1037,6 +1117,14 @@ function AdminPanel() {
           setConfirmOpen(false);
           setPendingStatusUpdate(null);
         }}
+      />
+
+      {/* Closed-loop resolution: fix photo + AI before/after verification */}
+      <ResolveProofModal
+        open={proofModalOpen}
+        complaint={selectedComplaint}
+        onResolve={handleResolveWithProof}
+        onClose={() => setProofModalOpen(false)}
       />
     </div>
   );
