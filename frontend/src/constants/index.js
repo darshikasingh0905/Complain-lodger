@@ -41,8 +41,10 @@ export const DEPT_COLORS = {
   Drainage: "#7C6BAE",
   "Street Lights": "#B98A2F",
   "Public Transport": "#B85B7E",
+  // Safety departments share the pink family so safety pins/charts are
+  // instantly recognisable everywhere (see isSafetyComplaint).
   "Women Safety Cell": "#DB2777",
-  Police: "#5B6B92",
+  Police: "#EC4899",
   "Traffic Police": "#8A6FC0",
   Other: "#8A897F",
 };
@@ -69,6 +71,23 @@ export const getDeptColor = (dept) => {
   if (d.includes("transport") || d.includes("bus")) return DEPT_COLORS["Public Transport"];
   if (d.includes("police")) return DEPT_COLORS.Police;
   return DEPT_COLORS.Other;
+};
+
+/** Signature pink used for safety complaints everywhere in the UI. */
+export const SAFETY_PINK = "#BE185D";
+
+/**
+ * True when a complaint is a safety complaint (women safety or general
+ * community safety). Used to render the pink safety identity consistently
+ * across lists, dashboards, admin views and the map.
+ */
+export const isSafetyComplaint = (c) => {
+  if (!c) return false;
+  const dept = (c.department || "").toLowerCase();
+  if (dept.includes("women") || dept.includes("safety") || dept.includes("police")) return true;
+  if ((c.priorityBreakdown?.womenSafety ?? 0) > 0) return true;
+  const cat = (c.category || "").toLowerCase();
+  return /harass|stalk|unsafe|eve teasing|robbery|snatching|assault/.test(cat);
 };
 
 /** Solid hex colors for priority levels (charts, map pins). */

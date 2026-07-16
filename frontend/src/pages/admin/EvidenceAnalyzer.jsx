@@ -16,7 +16,8 @@ import {
 } from "lucide-react";
 import { useComplaints } from "../../context/ComplaintContext";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { PriorityBadge } from "../../components/ui/Badge";
+import { PriorityBadge, SafetyBadge } from "../../components/ui/Badge";
+import { isSafetyComplaint } from "../../constants";
 
 // ─── Verdict config ───────────────────────────────────────────────────────────
 const VERDICT_CONFIG = {
@@ -211,9 +212,12 @@ export default function EvidenceAnalyzer() {
                 <p className="text-xs text-muted font-medium mb-0.5">Complaint ID</p>
                 <p className="text-text font-bold text-2xl font-mono">#{complaint.id}</p>
               </div>
-              {(complaint.priorityLevel || complaint.priority) && (
-                <PriorityBadge level={complaint.priorityLevel || complaint.priority} />
-              )}
+              <span className="flex items-center gap-1.5">
+                {isSafetyComplaint(complaint) && <SafetyBadge compact />}
+                {(complaint.priorityLevel || complaint.priority) && (
+                  <PriorityBadge level={complaint.priorityLevel || complaint.priority} />
+                )}
+              </span>
             </div>
 
             {/* Description */}

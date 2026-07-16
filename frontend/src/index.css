@@ -74,8 +74,9 @@
     @apply transition-all duration-200 hover:border-primary/40;
   }
   .card-hover:hover {
+    /* Uses the active theme's primary (teal, or pink in Women Safety Mode) */
     box-shadow:
-      0 2px 8px rgba(0, 109, 91, 0.08),
+      0 2px 8px rgb(var(--c-primary) / 0.08),
       0 12px 32px rgba(31, 41, 55, 0.1);
   }
 
@@ -159,6 +160,14 @@
   }
   .badge-primary {
     @apply badge bg-primary-light border-primary/20 text-primary;
+  }
+  /* Safety complaints keep their signature pink in EVERY theme, so they are
+     recognisable in mixed lists, admin views, notifications and the map. */
+  .badge-safety {
+    @apply badge;
+    background: #fce7f3;
+    border-color: #f9a8d4;
+    color: #9d174d;
   }
 
   /* --- Alerts --- */
