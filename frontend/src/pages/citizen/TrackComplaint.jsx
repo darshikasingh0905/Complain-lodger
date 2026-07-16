@@ -661,6 +661,9 @@ function TrackComplaint() {
                     { label: "Duplicates", val: bd.duplicates ?? 0, max: 10 },
                     { label: "Location", val: bd.location ?? 0, max: 5 },
                     { label: "Time Pending", val: bd.timePending ?? 0, max: 5 },
+                    ...(bd.womenSafety > 0
+                      ? [{ label: "Women Safety ♀", val: bd.womenSafety, max: 15 }]
+                      : []),
                   ];
 
                   return (

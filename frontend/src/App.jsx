@@ -7,6 +7,7 @@ import {
 } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { ComplaintProvider } from "./context/ComplaintContext";
+import { SafetyModeProvider } from "./context/SafetyModeContext";
 import RoleGuard from "./components/guards/RoleGuard";
 import SuperAdminGuard from "./components/guards/SuperAdminGuard";
 
@@ -38,6 +39,7 @@ import SettingsPage from "./pages/admin/SettingsPage";
 function App() {
   return (
     <AuthProvider>
+      <SafetyModeProvider>
       <ComplaintProvider>
         <Router>
           <div className="min-h-screen bg-background flex flex-col text-text">
@@ -157,6 +159,7 @@ function App() {
           </div>
         </Router>
       </ComplaintProvider>
+      </SafetyModeProvider>
     </AuthProvider>
   );
 }

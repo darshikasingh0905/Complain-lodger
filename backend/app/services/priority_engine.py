@@ -11,6 +11,16 @@ MAX_URGENCY = 10
 MAX_DUPLICATES = 10
 MAX_LOCATION = 5
 MAX_TIME_PENDING = 5
+MAX_WOMEN_SAFETY = 15  # boost for women-safety related grievances
+
+# Women-safety detection: matched against category + description + address.
+# These complaints get a dedicated priority boost so they surface first.
+WOMEN_SAFETY_KEYWORDS = [
+    "harass", "stalk", "eve teasing", "eve-teasing", "molest", "lewd",
+    "women safety", "unsafe for women", "catcall", "followed me",
+    "inappropriate touch", "chain snatch", "snatching", "robbery",
+    "kidnap", "assault", "unsafe at night", "drunk men", "misbehav",
+]
 
 # Mapping Factors
 SAFETY_RISK_MAP = {
@@ -110,7 +120,20 @@ def calculate_priority(
 
     # 8. SLA Escalation Boost (+20 points)
     escalation_score = 20 if is_escalated else 0
-        
+
+    # 9. Women Safety Boost (+15 points)
+    # Detected from the AI category (Women Safety Cell) or safety keywords in
+    # the complaint text — these grievances must never sit at the bottom.
+    category_l = (category or "").lower()
+    women_safety_score = 0
+    if (
+        "eve teasing" in category_l
+        or "unsafe spot" in category_l
+        or "women" in category_l
+        or any(kw in combined_text for kw in WOMEN_SAFETY_KEYWORDS)
+    ):
+        women_safety_score = MAX_WOMEN_SAFETY
+
     # Total Score Calculation
     total_score = (
         safety_score +
@@ -120,7 +143,8 @@ def calculate_priority(
         duplicates_score +
         location_score +
         time_pending_score +
-        escalation_score
+        escalation_score +
+        women_safety_score
     )
     total_score = max(0, min(100, total_score))
     
@@ -146,7 +170,9 @@ def calculate_priority(
         reasons.append("near critical public location/infrastructure")
     if is_escalated:
         reasons.append("SLA breach escalation boost")
-        
+    if women_safety_score > 0:
+        reasons.append("flagged as a women-safety concern (dedicated priority boost applied)")
+
     if reasons:
         reason_explanation = f"Complaint prioritized due to: {', and '.join(reasons)}."
     else:
@@ -163,7 +189,8 @@ def calculate_priority(
             "duplicates": duplicates_score,
             "location": location_score,
             "timePending": time_pending_score,
-            "escalationBoost": escalation_score
+            "escalationBoost": escalation_score,
+            "womenSafety": women_safety_score
         },
         "reason": reason_explanation
     }

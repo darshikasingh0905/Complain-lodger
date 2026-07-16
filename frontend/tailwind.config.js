@@ -12,10 +12,12 @@ export default {
         text: "#1F2937",
         muted: "#6B7280",
 
+        // Primary is driven by CSS variables so Women Safety Mode can switch
+        // the whole app from teal-green to pink at runtime (see index.css).
         primary: {
-          DEFAULT: "#006D5B",
-          hover: "#005546",
-          light: "#E7F4F0",
+          DEFAULT: "rgb(var(--c-primary) / <alpha-value>)",
+          hover: "rgb(var(--c-primary-hover) / <alpha-value>)",
+          light: "rgb(var(--c-primary-light) / <alpha-value>)",
         },
 
         status: {
@@ -75,9 +77,9 @@ export default {
           to: { opacity: "1", transform: "translateY(0) scale(1)" },
         },
         pulseRing: {
-          "0%": { boxShadow: "0 0 0 0 rgba(0,109,91,.45)" },
-          "70%": { boxShadow: "0 0 0 12px rgba(0,109,91,0)" },
-          "100%": { boxShadow: "0 0 0 0 rgba(0,109,91,0)" },
+          "0%": { boxShadow: "0 0 0 0 rgb(var(--c-primary) / 0.45)" },
+          "70%": { boxShadow: "0 0 0 12px rgb(var(--c-primary) / 0)" },
+          "100%": { boxShadow: "0 0 0 0 rgb(var(--c-primary) / 0)" },
         },
       },
 

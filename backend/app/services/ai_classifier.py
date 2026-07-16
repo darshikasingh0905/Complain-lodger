@@ -83,7 +83,10 @@ _DEPT_KEYWORDS: Dict[str, List[str]] = {
         "encroachment", "hawkers", "license", "shop act"
     ],
     "Women Safety Cell": [
-        "harassment", "unsafe", "women safety", "eve teasing", "stalking", "abuse"
+        "harassment", "unsafe", "women safety", "eve teasing", "stalking", "abuse",
+        "molest", "catcall", "lewd", "followed", "inappropriate touch",
+        "chain snatch", "snatching", "unsafe at night", "drunk men", "misbehav",
+        "dark lane", "no lights at night"
     ],
     "Cyber Crime": [
         "cyber", "online fraud", "scam", "phishing", "hacked", "password",
@@ -158,6 +161,11 @@ def _fallback_classify(title: str, description: str) -> Dict[str, Any]:
         severity = "Critical"
     elif priority == "Low":
         severity = "Minor"
+
+    # Women-safety complaints are never allowed to classify below High/Critical
+    if best_dept == "Women Safety Cell":
+        priority = "High"
+        severity = "Critical"
 
     # Extract keywords found
     found_keywords = []

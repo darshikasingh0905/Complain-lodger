@@ -9,8 +9,21 @@
 ========================= */
 
 @layer base {
+  /* Theme tokens — Women Safety Mode swaps these to pink at runtime */
+  :root {
+    --c-primary: 0 109 91; /* #006D5B */
+    --c-primary-hover: 0 85 70; /* #005546 */
+    --c-primary-light: 231 244 240; /* #E7F4F0 */
+  }
+  .theme-safety {
+    --c-primary: 190 24 93; /* #BE185D */
+    --c-primary-hover: 157 23 77; /* #9D174D */
+    --c-primary-light: 252 231 243; /* #FCE7F3 */
+  }
+
   body {
     @apply bg-background text-text font-sans antialiased;
+    transition: background-color 0.3s ease;
   }
 
   h1,

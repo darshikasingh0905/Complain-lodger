@@ -13,9 +13,11 @@ import {
   Building2,
   Users,
   Settings,
+  HeartHandshake,
 } from "lucide-react";
 
 import useAuth from "../../hooks/useAuth";
+import { useSafetyMode } from "../../context/SafetyModeContext";
 import NotificationBell from "./NotificationBell";
 
 const CITIZEN_NAV = [
@@ -43,6 +45,7 @@ function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { isAuthenticated, userRole, userData, logout } = useAuth();
+  const { safetyMode, toggleSafetyMode } = useSafetyMode();
 
   const currentPath = location.pathname;
 
@@ -106,6 +109,40 @@ function Navbar() {
                 );
               })}
             </div>
+
+            {/* Women Safety Mode toggle — citizens only (the USP switch) */}
+            {userRole === "citizen" && (
+              <button
+                onClick={toggleSafetyMode}
+                role="switch"
+                aria-checked={safetyMode}
+                data-tour="safety-toggle"
+                title={
+                  safetyMode
+                    ? "Women Safety Mode is ON — safety complaints are prioritized"
+                    : "Turn on Women Safety Mode"
+                }
+                className={`flex items-center gap-2 pl-2.5 pr-1.5 py-1.5 rounded-full border text-xs font-semibold transition-all duration-300 ${
+                  safetyMode
+                    ? "bg-primary text-white border-primary shadow-lift"
+                    : "bg-surface text-muted border-border hover:text-primary hover:border-primary/40"
+                }`}
+              >
+                <HeartHandshake className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Women Safety</span>
+                <span
+                  className={`w-8 h-4.5 h-[18px] rounded-full relative transition-colors duration-300 ${
+                    safetyMode ? "bg-white/30" : "bg-border"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-[2px] w-3.5 h-3.5 rounded-full bg-white shadow transition-all duration-300 ${
+                      safetyMode ? "left-[18px]" : "left-[2px]"
+                    }`}
+                  />
+                </span>
+              </button>
+            )}
 
             <NotificationBell />
 

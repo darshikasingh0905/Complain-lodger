@@ -761,6 +761,9 @@ function AdminPanel() {
                     { label: "Duplicate Reports", value: breakdown.duplicates ?? 0, max: 10 },
                     { label: "Location", value: breakdown.location ?? 0, max: 5 },
                     { label: "Time Pending", value: breakdown.timePending ?? 0, max: 5 },
+                    ...(breakdown.womenSafety > 0
+                      ? [{ label: "Women Safety Boost ♀", value: breakdown.womenSafety, max: 15 }]
+                      : []),
                   ];
 
                   return (

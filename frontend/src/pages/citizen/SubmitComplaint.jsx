@@ -9,10 +9,11 @@ import {
   CheckCircle, Copy, Trash2,
   AlertCircle, Loader2, ShieldCheck,
   Navigation, ImagePlus, Map as MapIcon,
-  Mic, MicOff,
+  Mic, MicOff, HeartHandshake, PhoneCall,
 } from "lucide-react";
 import { getCitizenProfile } from "../../services/citizenService";
 import { useComplaints } from "../../context/ComplaintContext";
+import { useSafetyMode } from "../../context/SafetyModeContext";
 import { Field, FieldError } from "../../components/ui/Field";
 import { maskAadhaar } from "../../utils/format";
 
@@ -20,6 +21,44 @@ import { maskAadhaar } from "../../utils/format";
 const MAX_IMAGES = 5;
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 const ACCEPTED_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+
+// Quick-report presets for Women Safety Mode. Each seeds the title and a
+// starter description containing the keywords the classifier and priority
+// engine recognise, so these reports route to the Women Safety Cell with
+// the +15 safety boost applied.
+const SAFETY_PRESETS = [
+  {
+    label: "Harassment / Eve Teasing",
+    title: "Harassment near ",
+    starter: "I want to report harassment / eve teasing of women. ",
+  },
+  {
+    label: "Stalking / Being Followed",
+    title: "Stalking incident near ",
+    starter: "I was followed and stalked, and it felt very unsafe. ",
+  },
+  {
+    label: "Unsafe / Dark Area",
+    title: "Unsafe poorly lit area at ",
+    starter: "This area is unsafe for women at night — the street lights are off and the lane is completely dark. ",
+  },
+  {
+    label: "Robbery / Chain Snatching",
+    title: "Chain snatching incident at ",
+    starter: "A robbery / chain snatching incident occurred here. Women walking alone feel unsafe. ",
+  },
+  {
+    label: "Unsafe Public Transport",
+    title: "Unsafe behaviour on public transport at ",
+    starter: "Men were misbehaving with women passengers on public transport. It felt harassing and unsafe. ",
+  },
+];
+
+const HELPLINES = [
+  { label: "Emergency", number: "112" },
+  { label: "Women Helpline", number: "1091" },
+  { label: "Women in Distress", number: "181" },
+];
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 const ReadField = ({ icon: Icon, label, value, mono = false }) => (
@@ -63,7 +102,13 @@ const LocationPickerMap = ({ coords, onPick }) => (
         <CircleMarker
           center={[coords.latitude, coords.longitude]}
           radius={10}
-          pathOptions={{ color: "#005546", fillColor: "#006D5B", fillOpacity: 0.85, weight: 2 }}
+          pathOptions={{
+            // Follows the active theme (teal, or pink in Women Safety Mode)
+            color: `rgb(${getComputedStyle(document.documentElement).getPropertyValue("--c-primary-hover").trim().split(" ").join(",")})`,
+            fillColor: `rgb(${getComputedStyle(document.documentElement).getPropertyValue("--c-primary").trim().split(" ").join(",")})`,
+            fillOpacity: 0.85,
+            weight: 2,
+          }}
         />
       )}
     </MapContainer>
@@ -86,6 +131,8 @@ const SectionHeading = ({ step, title, subtitle }) => (
 function SubmitComplaint() {
   const navigate = useNavigate();
   const { addComplaint } = useComplaints();
+  const { safetyMode } = useSafetyMode();
+  const [activePreset, setActivePreset] = useState(null);
 
   // ── Citizen profile ────────────────────────────────────────────────────────
   const [citizen, setCitizen] = useState(null);
@@ -231,7 +278,10 @@ function SubmitComplaint() {
     if (!description.trim()) e.description = "Please describe the issue.";
     if (description.length > 1000) e.description = "Description must not exceed 1000 characters.";
     if (pinCode && !/^\d{6}$/.test(pinCode)) e.pinCode = "Pin code must be exactly 6 digits.";
-    if (images.length === 0) e.images = "Please upload at least one image of the issue.";
+    // Photo evidence is NOT required in Women Safety Mode — harassment and
+    // stalking incidents rarely have photos, and demanding one is a barrier.
+    if (!safetyMode && images.length === 0)
+      e.images = "Please upload at least one image of the issue.";
     return e;
   };
 
@@ -372,6 +422,70 @@ function SubmitComplaint() {
           appropriate department.
         </p>
       </div>
+
+      {/* ── Women Safety panel (USP) ── */}
+      {safetyMode && (
+        <div className="card !border-primary/30 relative overflow-hidden animate-fade-in">
+          <div className="absolute top-0 left-0 w-full h-1 bg-primary" />
+          <div className="flex items-start gap-3">
+            <div className="icon-chip w-11 h-11 shrink-0">
+              <HeartHandshake className="w-6 h-6 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-bold text-text flex items-center gap-2 flex-wrap">
+                Women Safety Mode is on
+                <span className="badge-primary !text-[10px]">+15 priority boost</span>
+              </h2>
+              <p className="text-xs text-muted mt-1 leading-relaxed">
+                Safety complaints are routed to the <strong>Women Safety Cell</strong>,
+                receive a dedicated priority boost, and are never classified below
+                High priority. Pick a quick category or describe in your own words.
+              </p>
+            </div>
+          </div>
+
+          {/* Quick-report presets */}
+          <div className="flex flex-wrap gap-2 mt-4">
+            {SAFETY_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => {
+                  setActivePreset(p.label);
+                  setTitle(p.title);
+                  setDescription((prev) =>
+                    prev.startsWith(p.starter) ? prev : p.starter
+                  );
+                }}
+                className={`px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${
+                  activePreset === p.label
+                    ? "bg-primary text-white border-primary"
+                    : "bg-primary-light text-primary border-primary/20 hover:bg-primary hover:text-white"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Helplines */}
+          <div className="mt-4 pt-3 border-t border-border flex flex-wrap items-center gap-x-5 gap-y-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted">
+              In immediate danger? Call now
+            </span>
+            {HELPLINES.map((h) => (
+              <a
+                key={h.number}
+                href={`tel:${h.number}`}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:text-primary-hover transition-colors"
+              >
+                <PhoneCall className="w-3.5 h-3.5" />
+                {h.label}: <span className="font-mono">{h.number}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-5" noValidate>
         {/* ── Card 1: Citizen details (read-only) ── */}
@@ -579,12 +693,23 @@ function SubmitComplaint() {
           <div data-tour="evidence-upload">
             <div className="flex items-center justify-between">
               <label className="label">
-                Evidence Images <span className="text-status-error-accent">*</span>
+                Evidence Images{" "}
+                {safetyMode ? (
+                  <span className="text-muted font-normal normal-case">(optional in safety mode)</span>
+                ) : (
+                  <span className="text-status-error-accent">*</span>
+                )}
               </label>
               <span className="text-[11px] text-muted font-semibold">
                 {images.length}/{MAX_IMAGES} uploaded
               </span>
             </div>
+            {safetyMode && images.length === 0 && (
+              <p className="text-[11px] text-muted mb-1.5">
+                No photo needed — we understand safety incidents often can't be photographed.
+                Your description is enough.
+              </p>
+            )}
 
             {/* Previews */}
             {images.length > 0 && (

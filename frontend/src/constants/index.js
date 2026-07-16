@@ -41,6 +41,7 @@ export const DEPT_COLORS = {
   Drainage: "#7C6BAE",
   "Street Lights": "#B98A2F",
   "Public Transport": "#B85B7E",
+  "Women Safety Cell": "#DB2777",
   Other: "#8A897F",
 };
 
@@ -54,6 +55,7 @@ export const getDeptColor = (dept) => {
   if (DEPT_COLORS[dept]) return DEPT_COLORS[dept];
 
   const d = dept.toLowerCase();
+  if (d.includes("women") || d.includes("safety cell")) return DEPT_COLORS["Women Safety Cell"];
   if (d.includes("water")) return DEPT_COLORS["Water Supply"];
   if (d.includes("road")) return DEPT_COLORS.Roads;
   if (d.includes("electric") || d.includes("power")) return DEPT_COLORS.Electricity;
