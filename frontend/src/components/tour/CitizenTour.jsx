@@ -15,7 +15,18 @@ import useAuth from "../../hooks/useAuth";
  *   (the dashboard's "Take a Tour" button does this).
  * - Steps target elements marked with `data-tour="..."` and can span pages —
  *   the engine navigates, waits for the target, scrolls it into view and
- *   tracks its position on scroll/resize.
+ *   tracks its position with a single requestAnimationFrame loop (no scroll
+ *   listeners, no polling timers, no re-render storms).
+ *
+ * Perf notes (this file was rewritten to fix tour lag):
+ * - ONE rAF loop reads getBoundingClientRect once per frame and lerps the
+ *   spotlight toward it — smooth motion with zero CSS transitions, so the
+ *   spotlight never rubber-bands behind programmatic scrolling.
+ * - The page dim (huge box-shadow) lives on its own non-animated element;
+ *   the pulsing ring is a separate element. Previously the pulse keyframes
+ *   overrode the dim shadow and made the whole overlay flicker.
+ * - Rect state only updates when the rounded rect actually changed, so
+ *   steady frames cost one layout read and no React render.
  */
 
 const TOUR_KEY = "citizen_tour_done_v1";
@@ -55,7 +66,7 @@ const STEPS = [
     path: "/",
     selector: '[data-tour="details-section"]',
     title: "Describe the Problem",
-    body: "Give a clear title and description. Our AI reads this to route your complaint to the right department and score its urgency.",
+    body: "Give a clear title and description — type it, or speak it in your own language with the mic. Our AI reads this to route your complaint to the right department and score its urgency.",
   },
   {
     path: "/",
@@ -86,6 +97,28 @@ const STEPS = [
 const TOOLTIP_W = 360;
 const TOOLTIP_H_EST = 230;
 const PAD = 8;
+const FIND_DEADLINE_MS = 4000; // give up locating a target after ~4s
+
+/** Round a DOMRect to whole pixels so tiny sub-pixel jitter never re-renders. */
+const roundRect = (r) => ({
+  top: Math.round(r.top),
+  left: Math.round(r.left),
+  width: Math.round(r.width),
+  height: Math.round(r.height),
+  bottom: Math.round(r.bottom),
+});
+
+const sameRect = (a, b) =>
+  !!a && !!b && a.top === b.top && a.left === b.left && a.width === b.width && a.height === b.height;
+
+/** Move `from` a fraction of the way toward `to` (spotlight easing). */
+const lerpRect = (from, to, t) => ({
+  top: from.top + (to.top - from.top) * t,
+  left: from.left + (to.left - from.left) * t,
+  width: from.width + (to.width - from.width) * t,
+  height: from.height + (to.height - from.height) * t,
+  bottom: from.bottom + (to.bottom - from.bottom) * t,
+});
 
 export default function CitizenTour() {
   const { isAuthenticated, userRole } = useAuth();
@@ -94,17 +127,19 @@ export default function CitizenTour() {
 
   const [active, setActive] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
-  const [rect, setRect] = useState(null); // viewport rect of the spotlighted element
+  const [rect, setRect] = useState(null); // smoothed viewport rect of the spotlighted element
   const tooltipRef = useRef(null);
   const [tipHeight, setTipHeight] = useState(TOOLTIP_H_EST);
 
-  // Measure the real tooltip height after each render so the placement clamp
-  // never pushes its buttons off-screen (scroll is locked during the tour).
+  const step = active ? STEPS[stepIdx] : null;
+  const hasTarget = !!(step?.selector && rect);
+
+  // Measure the real tooltip height only when its content changes (step) or
+  // it first attaches to a target — NOT on every render. The clamp below uses
+  // it so the buttons never end up off-screen (scroll is locked during the tour).
   useLayoutEffect(() => {
     if (tooltipRef.current) setTipHeight(tooltipRef.current.offsetHeight);
-  });
-
-  const step = active ? STEPS[stepIdx] : null;
+  }, [stepIdx, hasTarget, active]);
 
   // ── Auto-start on first citizen login — exactly ONCE ───────────────────────
   // The seen-flag is written the moment the tour fires, so refreshing the page
@@ -149,7 +184,7 @@ export default function CitizenTour() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, stepIdx]);
 
-  // ── Locate + track the target element ───────────────────────────────────────
+  // ── Locate + track the target element (single rAF loop) ────────────────────
   useEffect(() => {
     if (!active || !step) return;
     if (location.pathname !== step.path) return; // wait for navigation
@@ -157,33 +192,43 @@ export default function CitizenTour() {
     setRect(null);
     if (!step.selector) return; // centered welcome step — no target
 
-    let cancelled = false;
+    let raf = 0;
     let el = null;
-    let tries = 0;
+    let scrolled = false;
+    let smooth = null; // the lerped rect we actually render
+    const startedAt = performance.now();
 
-    const update = () => {
-      if (!cancelled && el) setRect(el.getBoundingClientRect());
-    };
-
-    const find = () => {
-      if (cancelled) return;
-      el = document.querySelector(step.selector);
-      if (!el) {
-        if (tries++ < 40) setTimeout(find, 100);
-        return; // give up silently after ~4s; overlay stays dimmed
+    const frame = () => {
+      if (!el || !el.isConnected) {
+        el = document.querySelector(step.selector);
+        if (!el) {
+          // Element not on the page yet (data still loading / route settling).
+          if (performance.now() - startedAt < FIND_DEADLINE_MS) {
+            raf = requestAnimationFrame(frame);
+          }
+          return; // give up silently after the deadline; overlay stays dimmed
+        }
       }
-      el.scrollIntoView({ block: "center", behavior: "smooth" });
-      setTimeout(update, 400); // measure after smooth scroll settles
-      window.addEventListener("scroll", update, true);
-      window.addEventListener("resize", update);
-    };
-    find();
 
-    return () => {
-      cancelled = true;
-      window.removeEventListener("scroll", update, true);
-      window.removeEventListener("resize", update);
+      if (!scrolled) {
+        scrolled = true;
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+
+      const target = roundRect(el.getBoundingClientRect());
+      // Ease toward the target; snap when close so steady frames do nothing.
+      smooth = !smooth ? target : lerpRect(smooth, target, 0.3);
+      if (Math.abs(smooth.top - target.top) < 1 && Math.abs(smooth.left - target.left) < 1) {
+        smooth = target;
+      }
+      const next = roundRect({ ...smooth, bottom: smooth.top + smooth.height });
+      setRect((prev) => (sameRect(prev, next) ? prev : next));
+
+      raf = requestAnimationFrame(frame);
     };
+
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
   }, [active, stepIdx, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Esc to exit ─────────────────────────────────────────────────────────────
@@ -196,13 +241,14 @@ export default function CitizenTour() {
 
   // ── Hard interaction lock ───────────────────────────────────────────────────
   // While the tour runs, the page is frozen: user scrolling (wheel, touch,
-  // scroll keys) and Tab focus-escape are blocked. Programmatic scrolling
-  // (scrollIntoView for each step) still works, so the spotlight can move.
+  // scroll keys) is blocked and Tab focus is trapped inside the tooltip.
+  // Programmatic scrolling (scrollIntoView for each step) still works, so the
+  // spotlight can move.
   useEffect(() => {
     if (!active) return;
 
-    const insideTour = (e) =>
-      e.target instanceof Element && e.target.closest("[data-tour-root]");
+    const insideTour = (node) =>
+      node instanceof Element && node.closest("[data-tour-root]");
 
     // Wheel/touch scrolling is fully frozen — the tour drives all scrolling
     // itself via scrollIntoView, and the tooltip has nothing to scroll.
@@ -212,10 +258,21 @@ export default function CitizenTour() {
     const blockKeys = (e) => {
       if (e.key === "Escape") return; // exit shortcut stays available
       if (e.key === "Tab") {
-        e.preventDefault(); // keep focus from tabbing into the frozen page
+        // Focus trap: cycle through the tour's own buttons instead of letting
+        // focus escape into the frozen page underneath.
+        e.preventDefault();
+        const root = document.querySelector("[data-tour-tooltip]");
+        if (!root) return;
+        const focusables = Array.from(root.querySelectorAll("button"));
+        if (!focusables.length) return;
+        const idx = focusables.indexOf(document.activeElement);
+        const nextIdx = e.shiftKey
+          ? (idx <= 0 ? focusables.length - 1 : idx - 1)
+          : (idx === -1 || idx === focusables.length - 1 ? 0 : idx + 1);
+        focusables[nextIdx].focus();
         return;
       }
-      if (SCROLL_KEYS.includes(e.key) && !insideTour(e)) e.preventDefault();
+      if (SCROLL_KEYS.includes(e.key) && !insideTour(e.target)) e.preventDefault();
     };
 
     window.addEventListener("wheel", blockScroll, { passive: false, capture: true });
@@ -231,7 +288,6 @@ export default function CitizenTour() {
   if (!active || !step) return null;
 
   const isLast = stepIdx === STEPS.length - 1;
-  const hasTarget = !!(step.selector && rect);
 
   // ── Tooltip placement: below the target, flipping above when cramped, and
   //    always fully clamped into the viewport using the MEASURED tooltip
@@ -263,18 +319,32 @@ export default function CitizenTour() {
       {/* Full-screen click blocker — disables ALL page interaction */}
       <div className="absolute inset-0" aria-hidden="true" />
 
-      {/* Spotlight (dimming comes from its huge box-shadow) */}
       {hasTarget ? (
-        <div
-          className="absolute rounded-xl pointer-events-none transition-all duration-300 ease-out ring-2 ring-primary animate-pulse-ring"
-          style={{
-            top: rect.top - PAD,
-            left: rect.left - PAD,
-            width: rect.width + PAD * 2,
-            height: rect.height + PAD * 2,
-            boxShadow: "0 0 0 100vmax rgba(15, 23, 42, 0.6)",
-          }}
-        />
+        <>
+          {/* Page dim: its huge box-shadow darkens everything around the
+              cutout. Deliberately NOT animated — the pulsing ring below is a
+              separate element so its keyframes can never clobber this shadow. */}
+          <div
+            className="absolute rounded-xl pointer-events-none"
+            style={{
+              top: rect.top - PAD,
+              left: rect.left - PAD,
+              width: rect.width + PAD * 2,
+              height: rect.height + PAD * 2,
+              boxShadow: "0 0 0 100vmax rgba(15, 23, 42, 0.6)",
+            }}
+          />
+          {/* Pulsing highlight ring (separate layer) */}
+          <div
+            className="absolute rounded-xl pointer-events-none ring-2 ring-primary animate-pulse-ring"
+            style={{
+              top: rect.top - PAD,
+              left: rect.left - PAD,
+              width: rect.width + PAD * 2,
+              height: rect.height + PAD * 2,
+            }}
+          />
+        </>
       ) : (
         <div className="absolute inset-0 bg-[#0f172a]/60" />
       )}
