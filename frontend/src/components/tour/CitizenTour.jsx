@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Sparkles, ArrowRight, ArrowLeft, X } from "lucide-react";
 import useAuth from "../../hooks/useAuth";
@@ -95,6 +95,14 @@ export default function CitizenTour() {
   const [active, setActive] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
   const [rect, setRect] = useState(null); // viewport rect of the spotlighted element
+  const tooltipRef = useRef(null);
+  const [tipHeight, setTipHeight] = useState(TOOLTIP_H_EST);
+
+  // Measure the real tooltip height after each render so the placement clamp
+  // never pushes its buttons off-screen (scroll is locked during the tour).
+  useLayoutEffect(() => {
+    if (tooltipRef.current) setTipHeight(tooltipRef.current.offsetHeight);
+  });
 
   const step = active ? STEPS[stepIdx] : null;
 
@@ -182,19 +190,57 @@ export default function CitizenTour() {
     return () => window.removeEventListener("keydown", onKey);
   }, [active, end]);
 
+  // ── Hard interaction lock ───────────────────────────────────────────────────
+  // While the tour runs, the page is frozen: user scrolling (wheel, touch,
+  // scroll keys) and Tab focus-escape are blocked. Programmatic scrolling
+  // (scrollIntoView for each step) still works, so the spotlight can move.
+  useEffect(() => {
+    if (!active) return;
+
+    const insideTour = (e) =>
+      e.target instanceof Element && e.target.closest("[data-tour-root]");
+
+    // Wheel/touch scrolling is fully frozen — the tour drives all scrolling
+    // itself via scrollIntoView, and the tooltip has nothing to scroll.
+    const blockScroll = (e) => e.preventDefault();
+
+    const SCROLL_KEYS = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "];
+    const blockKeys = (e) => {
+      if (e.key === "Escape") return; // exit shortcut stays available
+      if (e.key === "Tab") {
+        e.preventDefault(); // keep focus from tabbing into the frozen page
+        return;
+      }
+      if (SCROLL_KEYS.includes(e.key) && !insideTour(e)) e.preventDefault();
+    };
+
+    window.addEventListener("wheel", blockScroll, { passive: false, capture: true });
+    window.addEventListener("touchmove", blockScroll, { passive: false, capture: true });
+    window.addEventListener("keydown", blockKeys, true);
+    return () => {
+      window.removeEventListener("wheel", blockScroll, { capture: true });
+      window.removeEventListener("touchmove", blockScroll, { capture: true });
+      window.removeEventListener("keydown", blockKeys, true);
+    };
+  }, [active]);
+
   if (!active || !step) return null;
 
   const isLast = stepIdx === STEPS.length - 1;
   const hasTarget = !!(step.selector && rect);
 
-  // ── Tooltip placement: below the target, flipping above when cramped ───────
+  // ── Tooltip placement: below the target, flipping above when cramped, and
+  //    always fully clamped into the viewport using the MEASURED tooltip
+  //    height (scroll is locked, so an off-screen tooltip is unreachable) ─────
   let tooltipStyle;
   if (hasTarget) {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const width = Math.min(TOOLTIP_W, vw - 32);
+    const h = tipHeight || TOOLTIP_H_EST;
     let top = rect.bottom + PAD + 14;
-    if (top + TOOLTIP_H_EST > vh) top = Math.max(16, rect.top - PAD - 14 - TOOLTIP_H_EST);
+    if (top + h > vh - 16) top = rect.top - PAD - 14 - h;
+    top = Math.min(Math.max(16, top), Math.max(16, vh - h - 16));
     const left = Math.min(
       Math.max(rect.left + rect.width / 2 - width / 2, 16),
       vw - width - 16
@@ -203,7 +249,13 @@ export default function CitizenTour() {
   }
 
   return (
-    <div className="fixed inset-0 z-[999]" role="dialog" aria-modal="true" aria-label="Getting started tour">
+    <div
+      className="fixed inset-0 z-[999]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Getting started tour"
+      data-tour-root
+    >
       {/* Full-screen click blocker — disables ALL page interaction */}
       <div className="absolute inset-0" aria-hidden="true" />
 
@@ -224,12 +276,20 @@ export default function CitizenTour() {
       )}
 
       {/* Tooltip card */}
+      {/* Positioning wrapper is separate from the animated card: the pop
+          animation overrides `transform`, which would break the centering
+          translate if both lived on the same element. */}
       <div
-        key={stepIdx}
-        className={`absolute bg-surface border border-border rounded-card shadow-lift p-5 animate-pop ${
+        className={`absolute ${
           hasTarget ? "" : "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(400px,calc(100vw-32px))]"
         }`}
         style={tooltipStyle}
+      >
+      <div
+        key={stepIdx}
+        ref={tooltipRef}
+        data-tour-tooltip
+        className="bg-surface border border-border rounded-card shadow-lift p-5 animate-pop"
       >
         {/* Header */}
         <div className="flex items-center justify-between gap-3 mb-3">
@@ -290,6 +350,7 @@ export default function CitizenTour() {
             </button>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
