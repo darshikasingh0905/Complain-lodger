@@ -15,10 +15,13 @@ import {
   localAuditEvidence,
 } from "./localComplaintStore";
 
+import { attachAuthInterceptor } from "./tokenStore";
+
 export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 export const BACKEND_URL = API_URL.replace(/\/api\/?$/, "");
 
 const http = axios.create({ baseURL: API_URL, timeout: 20000 });
+attachAuthInterceptor(http); // JWT: every API call carries the Bearer token
 
 // ─── Online / offline detection ───────────────────────────────────────────────
 
@@ -81,6 +84,11 @@ export const normalizeComplaint = (c) => ({
   evidence_verdict: c.evidence_verdict || null,
   evidence_reason: c.evidence_reason || null,
   evidence_confidence: c.evidence_confidence ?? null,
+  fix_image_url: c.fix_image_url || null,
+  fixImageFullUrl: c.fix_image_url ? `${BACKEND_URL}/${c.fix_image_url.replace(/^\//, "")}` : null,
+  fix_verdict: c.fix_verdict || null,
+  fix_reason: c.fix_reason || null,
+  fix_confidence: c.fix_confidence ?? null,
   status: c.status || "Submitted",
   image_url: c.image_url || null,
   imageFullUrl: c.image_url ? `${BACKEND_URL}/${c.image_url.replace(/^\//, "")}` : null,
@@ -122,8 +130,11 @@ export const createComplaint = async (payload) => {
   const { citizen, complaintLocation, complaint, imageFile, imagePreview, latitude, longitude } = payload;
 
   if (await checkApiOnline()) {
+    // Line 1: what the citizen typed. Line 2: the GPS-verified street address
+    // (reverse-geocoded from the pin) for crew-level accuracy.
     const address = [
       complaintLocation.area,
+      complaintLocation.gpsAddress || null,
       complaintLocation.landmark ? `Near ${complaintLocation.landmark}` : null,
       complaintLocation.pinCode || null,
     ]
@@ -164,6 +175,30 @@ export const updateComplaintStatus = async (id, newStatus) => {
     }
   }
   return localUpdateStatus(id, newStatus);
+};
+
+/**
+ * Closed-loop resolution (USP): upload the crew's AFTER photo; the backend
+ * vision AI compares it with the citizen's BEFORE evidence. A NOT_FIXED
+ * verdict blocks the Resolved transition unless force=true.
+ * Offline fallback: plain status update (no AI available locally).
+ */
+export const resolveWithProof = async (id, fixImageFile, force = false) => {
+  if (isApiOnline()) {
+    const form = new FormData();
+    form.append("fix_image", fixImageFile);
+    form.append("force", force ? "true" : "false");
+    try {
+      const res = await http.post(`/complaints/${numericIdOf(id)}/resolve-with-proof`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 120000, // before/after vision audit runs inline
+      });
+      return normalizeComplaint(res.data);
+    } catch (err) {
+      throw apiError(err, "Fix verification failed. Please try again.");
+    }
+  }
+  return localUpdateStatus(id, "Resolved");
 };
 
 /** Citizen confirms a resolved complaint: rating (1-5) + feedback → Closed. */
@@ -226,6 +261,101 @@ export const getTrends = async ({ role, department } = {}) => {
     console.warn("[analytics] trends fetch failed:", err.message);
     return null;
   }
+};
+
+// ─── Public accountability scoreboard ─────────────────────────────────────────
+
+const RESOLVED_STATES = ["Resolved", "Closed"];
+
+const gradeOf = (score) =>
+  score >= 85 ? "A+" : score >= 70 ? "A" : score >= 55 ? "B" : score >= 40 ? "C" : "D";
+
+/** Client-side scoreboard computation — mirrors the backend formula. Used offline. */
+const computeLocalScoreboard = (complaints) => {
+  const byDept = {};
+  complaints.forEach((c) => {
+    const d = c.department || "Other";
+    (byDept[d] = byDept[d] || []).push(c);
+  });
+
+  const departments = Object.entries(byDept).map(([department, items]) => {
+    const total = items.length;
+    const resolvedItems = items.filter((c) => RESOLVED_STATES.includes(c.status));
+    const resolved = resolvedItems.length;
+    const escalated = items.filter((c) => c.is_escalated).length;
+    const ratings = items.filter((c) => c.rating).map((c) => c.rating);
+
+    const hours = resolvedItems
+      .map((c) => (new Date(c.updatedAt) - new Date(c.createdAt)) / 36e5)
+      .filter((h) => Number.isFinite(h) && h >= 0);
+
+    const resolution_rate = total ? Math.round((resolved / total) * 100) : 0;
+    const sla_breach_pct = total ? Math.round((escalated / total) * 100) : 0;
+    const avg_rating = ratings.length
+      ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10
+      : null;
+    const satisfaction = avg_rating ? (avg_rating / 5) * 100 : 60;
+    const score = Math.round(
+      0.5 * resolution_rate + 0.3 * (100 - sla_breach_pct) + 0.2 * satisfaction
+    );
+
+    return {
+      department,
+      total,
+      resolved,
+      open: total - resolved,
+      resolution_rate,
+      avg_resolution_hours: hours.length
+        ? Math.round((hours.reduce((a, b) => a + b, 0) / hours.length) * 10) / 10
+        : null,
+      sla_breaches: escalated,
+      sla_breach_pct,
+      avg_rating,
+      ratings_count: ratings.length,
+      score,
+      grade: gradeOf(score),
+      insight: null,
+    };
+  });
+
+  departments.sort((a, b) => b.score - a.score || b.total - a.total);
+  departments.forEach((d, i) => (d.rank = i + 1));
+
+  const total = complaints.length;
+  const resolved = complaints.filter((c) => RESOLVED_STATES.includes(c.status)).length;
+  const escalated = complaints.filter((c) => c.is_escalated).length;
+  const allRatings = complaints.filter((c) => c.rating).map((c) => c.rating);
+
+  return {
+    departments,
+    overall: {
+      total,
+      resolved,
+      resolution_rate: total ? Math.round((resolved / total) * 100) : 0,
+      sla_breach_pct: total ? Math.round((escalated / total) * 100) : 0,
+      avg_rating: allRatings.length
+        ? Math.round((allRatings.reduce((a, b) => a + b, 0) / allRatings.length) * 10) / 10
+        : null,
+      departments_count: departments.length,
+    },
+    ai_summary: null,
+    ai_source: "local",
+    generated_at: new Date().toISOString(),
+  };
+};
+
+/** Fetch the public scoreboard; computes it locally when the API is down. */
+export const getScoreboard = async () => {
+  if (await checkApiOnline()) {
+    try {
+      const res = await http.get("/scoreboard", { timeout: 30000 });
+      return res.data;
+    } catch (err) {
+      console.warn("[scoreboard] API fetch failed, computing locally:", err.message);
+    }
+  }
+  const complaints = await getComplaints();
+  return computeLocalScoreboard(complaints);
 };
 
 // ─── Notifications ────────────────────────────────────────────────────────────
