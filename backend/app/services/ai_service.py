@@ -341,38 +341,57 @@ def analyze_evidence(image_path: str, description: str) -> Dict:
 # Fix Verification: before/after resolution audit (closed-loop accountability)
 # ---------------------------------------------------------------------------
 
-_FIX_PROMPT_TWO_IMAGES = """You are an AI resolution auditor for a government grievance portal.
+_FIX_PROMPT_TWO_IMAGES = """You are an AI resolution auditor for a government grievance portal. Be decisive.
+
 A citizen reported this issue:
 \"\"\"{description}\"\"\"
 
-You are given TWO images:
-- Image 1 (BEFORE): the citizen's original evidence of the problem.
-- Image 2 (AFTER): the photo the repair crew submitted as proof that the issue is fixed.
+You are given TWO images in order:
+- Image 1 = BEFORE: the citizen's original evidence showing the problem.
+- Image 2 = AFTER: the photo the repair crew submitted as proof of the fix.
 
-Compare them and decide whether the reported issue has genuinely been resolved.
-Return ONLY a valid JSON object with:
-- verdict: one of [FIXED, NOT_FIXED, UNCERTAIN]
-  - FIXED: the after photo clearly shows the issue is repaired/resolved
-  - NOT_FIXED: the issue is still visible, or the after photo shows the same unresolved problem
-  - UNCERTAIN: the photos are too ambiguous, dark, or unrelated to judge
-- reason: one sentence explaining your verdict
-- confidence: a float between 0.0 and 1.0
+Judge in TWO steps:
+1) RELEVANCE — Is the AFTER photo about the SAME kind of place/object as this complaint
+   (e.g. a road for a pothole, a pipe/street for a water leak, a bin/street for garbage)?
+   If the AFTER photo is clearly unrelated (a random object, indoors, a person, a screenshot),
+   the verdict is NOT_FIXED — an unrelated photo is NOT proof of a fix.
+2) RESOLUTION — If relevant, does the AFTER photo show the problem GONE / repaired / clean,
+   compared with the BEFORE photo?
 
-Respond with ONLY the JSON object. No explanation, no markdown.
-Example: {{"verdict":"FIXED","reason":"The pothole visible in the before image has been filled with fresh asphalt in the after image.","confidence":0.9}}"""
+Decide the verdict:
+- FIXED: AFTER is relevant AND clearly shows the issue repaired/resolved (e.g. a smooth intact
+  road where the before had a pothole; a clean street where the before had garbage). Prefer FIXED
+  when the after image plainly shows a good, repaired state of the reported thing.
+- NOT_FIXED: the problem is still visible in the AFTER photo, OR the AFTER photo is unrelated to the complaint.
+- UNCERTAIN: use ONLY if the AFTER photo is too dark/blurry to judge at all.
 
-_FIX_PROMPT_ONE_IMAGE = """You are an AI resolution auditor for a government grievance portal.
-A citizen reported this issue:
-\"\"\"{description}\"\"\"
-
-You are given ONE image: the photo the repair crew submitted as proof that the issue is now fixed.
-Decide whether it credibly shows the reported issue has been resolved.
-Return ONLY a valid JSON object with:
+Return ONLY a valid JSON object:
 - verdict: one of [FIXED, NOT_FIXED, UNCERTAIN]
 - reason: one sentence explaining your verdict
 - confidence: a float between 0.0 and 1.0
 
-Respond with ONLY the JSON object. No explanation, no markdown."""
+No explanation, no markdown.
+Example: {{"verdict":"FIXED","reason":"The pothole in the before image is gone; the after image shows a smooth resurfaced road.","confidence":0.9}}"""
+
+_FIX_PROMPT_ONE_IMAGE = """You are an AI resolution auditor for a government grievance portal. Be decisive.
+
+A citizen reported this issue:
+\"\"\"{description}\"\"\"
+
+You are given ONE image: the photo the repair crew submitted as proof the issue is now fixed.
+
+Judge in TWO steps:
+1) RELEVANCE — Is the photo about the SAME kind of place/object as this complaint? If it is clearly
+   unrelated (a random object, indoors, a person, a screenshot), the verdict is NOT_FIXED.
+2) RESOLUTION — If relevant, does it credibly show the reported problem repaired/clean/gone?
+
+Decide the verdict:
+- FIXED: relevant AND clearly shows a good, repaired/clean state of the reported thing.
+- NOT_FIXED: still shows the problem, OR the photo is unrelated to the complaint.
+- UNCERTAIN: only if the photo is too dark/blurry to judge at all.
+
+Return ONLY a valid JSON object with: verdict (FIXED/NOT_FIXED/UNCERTAIN), reason (one sentence),
+confidence (0.0-1.0). No explanation, no markdown."""
 
 
 def _fallback_fix(reason: str) -> Dict:
@@ -382,6 +401,95 @@ def _fallback_fix(reason: str) -> Dict:
         "confidence": 0.0,
         "source": "fallback",
     }
+
+
+def _image_scene_stats(path: str):
+    """
+    Lightweight scene analysis with Pillow + numpy (no ML model needed).
+    Returns per-image signals used by the offline fix heuristic, or None if
+    the file can't be read.
+    """
+    try:
+        from PIL import Image
+        import numpy as np
+    except Exception:
+        return None
+    try:
+        img = Image.open(path).convert("RGB")
+        img.thumbnail((96, 96))
+        a = np.asarray(img, dtype=np.float32) / 255.0
+        r, g, b = a[..., 0], a[..., 1], a[..., 2]
+        bright = (r + g + b) / 3.0
+        spread = a.max(axis=2) - a.min(axis=2)   # 0 = gray, high = saturated
+
+        gray   = (spread < 0.13) & (bright > 0.12) & (bright < 0.80)   # asphalt/concrete
+        sky    = (b > r + 0.02) & (b > g - 0.02) & (b > 0.42)          # sky / water
+        veg    = (g > r + 0.03) & (g > b + 0.03) & (g > 0.22)          # greenery
+        earth  = (r > g) & (g >= b) & (r > 0.20) & (r < 0.75)          # soil / road edge
+        white  = bright > 0.80                                          # overcast sky / bright
+        skin   = (r > g) & (g > b) & (r > 0.38) & (r < 0.96) & \
+                 ((r - g) > 0.04) & ((r - g) < 0.34) & ((g - b) > 0.02) # faces / hands
+
+        n = bright.size
+        outdoor = float((gray | sky | veg | earth | white).sum()) / n
+        return {
+            "variance": float(bright.std()),          # texture/detail (low = flat graphic)
+            "outdoor": outdoor,                        # civic-scene likelihood 0..1
+            "skin": float(skin.sum()) / n,             # person-photo likelihood 0..1
+            "thumb": np.asarray(img.resize((16, 16)).convert("L"), dtype=np.float32),
+        }
+    except Exception:
+        return None
+
+
+def _heuristic_fix(before_path, after_path: str, description: str) -> Dict:
+    """
+    Offline SANITY-CHECK used only when the Ollama vision model is unavailable.
+
+    Honest design: without a vision model we CANNOT semantically confirm that
+    the after photo is the same location now repaired (two unrelated outdoor
+    photos look identical to a colour heuristic). So this NEVER returns FIXED.
+    It confidently rejects what it can be sure is invalid proof — screenshots,
+    selfies, non-outdoor shots, or an after photo unchanged from the before —
+    and otherwise returns UNCERTAIN, which (under the strict resolve policy)
+    blocks close-out and prompts the admin to start the vision model.
+    """
+    import numpy as np
+    after = _image_scene_stats(after_path)
+    if not after:
+        return _fallback_fix("The uploaded fix photo could not be read for analysis.")
+
+    tag = "offline_heuristic"
+
+    # 1) Flat / graphic / screenshot → definitely not real site proof.
+    if after["variance"] < 0.05:
+        return {"verdict": "NOT_FIXED", "confidence": 0.7, "source": tag,
+                "reason": "The uploaded photo looks like a flat image or screenshot, not a real photograph of the repaired site."}
+
+    # 2) Clearly a person/selfie (lots of skin AND little outdoor scenery).
+    if after["skin"] > 0.45 and after["outdoor"] < 0.45:
+        return {"verdict": "NOT_FIXED", "confidence": 0.68, "source": tag,
+                "reason": "The photo appears to show a person rather than the reported location, so it isn't valid proof of a fix."}
+
+    # 3) Not an outdoor/civic scene → unrelated to a civic complaint.
+    if after["outdoor"] < 0.40:
+        return {"verdict": "NOT_FIXED", "confidence": 0.66, "source": tag,
+                "reason": "The photo doesn't look like the reported outdoor location or issue, so it can't verify the repair."}
+
+    # 4) After photo unchanged from the before → issue clearly not resolved.
+    if before_path:
+        before = _image_scene_stats(before_path)
+        if before:
+            diff = float(np.abs(after["thumb"] - before["thumb"]).mean()) / 255.0
+            if diff < 0.08:
+                return {"verdict": "NOT_FIXED", "confidence": 0.72, "source": tag,
+                        "reason": "The after photo looks essentially unchanged from the original problem photo — the issue does not appear resolved."}
+
+    # 5) Passes the sanity checks, but colour analysis alone CANNOT confirm this
+    #    is the same place now repaired (vs a different, unrelated location).
+    #    Return UNCERTAIN — genuine verification requires the vision model.
+    return {"verdict": "UNCERTAIN", "confidence": 0.0, "source": tag,
+            "reason": "Basic checks passed, but the fix cannot be genuinely verified without the AI vision model. Start Ollama and pull 'llama3.2-vision', then re-run — or override if you have inspected the fix yourself."}
 
 
 def _read_b64(path: str) -> str | None:
@@ -456,14 +564,14 @@ def verify_fix(before_path: str | None, after_path: str, description: str) -> Di
         }
 
     except requests.exceptions.ConnectionError:
-        print(f"[Fix Verify] Ollama Vision not reachable at {OLLAMA_API_URL}. Using fallback.")
-        return _fallback_fix("Vision model service is currently unavailable.")
+        print(f"[Fix Verify] Ollama Vision offline — using offline image heuristic.")
+        return _heuristic_fix(before_path, after_path, description)
     except requests.exceptions.Timeout:
-        print("[Fix Verify] Ollama Vision request timed out.")
-        return _fallback_fix("Vision model request timed out. Please try again.")
+        print("[Fix Verify] Ollama Vision timed out — using offline image heuristic.")
+        return _heuristic_fix(before_path, after_path, description)
     except (json.JSONDecodeError, KeyError, ValueError) as e:
-        print(f"[Fix Verify] Failed to parse vision response: {e}")
-        return _fallback_fix("Failed to parse vision model response.")
+        print(f"[Fix Verify] Vision parse error ({e}) — using offline image heuristic.")
+        return _heuristic_fix(before_path, after_path, description)
 
 
 # ---------------------------------------------------------------------------
