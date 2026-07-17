@@ -31,8 +31,6 @@ import {
   CheckCircle,
   CheckCircle2,
   FileQuestion,
-  RefreshCw,
-  ScanSearch,
   Loader2,
   ShieldAlert,
   UserCog,
@@ -67,8 +65,6 @@ function AdminPanel() {
     loadingComplaints,
     updateStatus,
     resolveWithProof,
-    reclassifyComplaint,
-    auditEvidence,
   } = useComplaints();
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -82,8 +78,6 @@ function AdminPanel() {
   const [sortBy, setSortBy] = useState("Newest");
 
   const [updatingStatus, setUpdatingStatus] = useState(false);
-  const [reclassifying, setReclassifying] = useState(false);
-  const [auditingEvidence, setAuditingEvidence] = useState(false);
 
   const [actionSuccess, setActionSuccess] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -158,49 +152,6 @@ function AdminPanel() {
       setTimeout(() => setActionSuccess(null), 4000);
     }
     return updated;
-  };
-
-  // ── AI reclassification ────────────────────────────────────────────────────
-  const handleAIReclassify = async (id) => {
-    setReclassifying(true);
-    setActionSuccess(null);
-
-    try {
-      const updated = await reclassifyComplaint(id);
-      setSelectedComplaint(updated);
-      setActionSuccess("AI routing updated successfully.");
-      setTimeout(() => setActionSuccess(null), 3000);
-    } catch (err) {
-      console.error(err);
-      alert(err.message || "AI classification failed.");
-    } finally {
-      setReclassifying(false);
-    }
-  };
-
-  // ── Evidence audit ─────────────────────────────────────────────────────────
-  const handleEvidenceAudit = async (id) => {
-    setAuditingEvidence(true);
-    setActionSuccess(null);
-
-    try {
-      const updated = await auditEvidence(id);
-      setSelectedComplaint(updated);
-
-      const verdict = updated.evidence_verdict;
-      if (verdict === "MATCH") {
-        setActionSuccess("Evidence verified successfully.");
-      } else if (verdict === "MISMATCH") {
-        setActionSuccess("Possible evidence mismatch detected.");
-      } else {
-        setActionSuccess("Evidence audit completed.");
-      }
-      setTimeout(() => setActionSuccess(null), 4000);
-    } catch (err) {
-      alert(err.message || "Evidence audit failed.");
-    } finally {
-      setAuditingEvidence(false);
-    }
   };
 
   // Departments actually present in the data — the AI classifier emits
@@ -891,64 +842,6 @@ function AdminPanel() {
                         />
                       )}
 
-                      {/* Vision audit verdict */}
-                      {selectedComplaint.evidence_verdict && (
-                        <div className="inset-panel p-4 space-y-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <h4 className="text-sm font-semibold text-text">
-                              Vision AI Audit
-                            </h4>
-                            <span
-                              className={
-                                selectedComplaint.evidence_verdict === "MATCH"
-                                  ? "badge-success"
-                                  : selectedComplaint.evidence_verdict === "MISMATCH"
-                                    ? "badge-error"
-                                    : "badge-warning"
-                              }
-                            >
-                              {selectedComplaint.evidence_verdict}
-                            </span>
-                          </div>
-                          {selectedComplaint.evidence_reason && (
-                            <p className="text-sm text-muted leading-relaxed">
-                              {selectedComplaint.evidence_reason}
-                            </p>
-                          )}
-                          {selectedComplaint.evidence_confidence != null && (
-                            <div className="flex items-center gap-3">
-                              <div className="flex-1 h-2 bg-border rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-primary rounded-full"
-                                  style={{
-                                    width: `${Math.round(selectedComplaint.evidence_confidence * 100)}%`,
-                                  }}
-                                />
-                              </div>
-                              <span className="text-xs font-mono font-bold text-text shrink-0">
-                                {Math.round(selectedComplaint.evidence_confidence * 100)}%
-                              </span>
-                            </div>
-                          )}
-
-                          {/* Fallback explainer: verdict came without a vision model */}
-                          {selectedComplaint.evidence_verdict === "UNCERTAIN" &&
-                            /unavailable|not found|missing/i.test(
-                              selectedComplaint.evidence_reason || ""
-                            ) && (
-                              <div className="alert-info !text-xs">
-                                <span>
-                                  This is a fallback verdict — the Ollama vision model is
-                                  not running, so no real image analysis was performed.
-                                  Start Ollama and pull{" "}
-                                  <code className="font-mono">llama3.2-vision</code>, then
-                                  re-run the audit for genuine verification.
-                                </span>
-                              </div>
-                            )}
-                        </div>
-                      )}
-
                       {/* Fix proof (closed-loop resolution audit) */}
                       {selectedComplaint.fixImageFullUrl && (
                         <div className="inset-panel p-4 space-y-3">
@@ -1014,7 +907,7 @@ function AdminPanel() {
                   <div className="mb-6">
                     <h2 className="text-lg font-semibold text-text">Complaint Actions</h2>
                     <p className="mt-1.5 text-sm text-muted">
-                      Update progress, review AI recommendations, and verify evidence.
+                      Update progress and resolve with AI-verified photo proof.
                     </p>
                   </div>
 
@@ -1047,49 +940,6 @@ function AdminPanel() {
                         </button>
                       );
                     })}
-                  </div>
-
-                  <div className="my-7 border-t border-border" />
-
-                  {/* AI operations */}
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="font-semibold text-text text-sm">AI Operations</h3>
-                      <p className="text-sm text-muted mt-1">
-                        Refresh AI routing or verify uploaded evidence.
-                      </p>
-                    </div>
-
-                    <button
-                      disabled={reclassifying}
-                      onClick={() => handleAIReclassify(selectedComplaint.id)}
-                      className="btn-primary w-full py-3"
-                    >
-                      <RefreshCw className={`w-4 h-4 ${reclassifying ? "animate-spin" : ""}`} />
-                      {reclassifying ? "Refreshing…" : "Re-run AI Classification"}
-                    </button>
-
-                    {(selectedComplaint.imagePreview || selectedComplaint.image_url) && (
-                      <button
-                        disabled={auditingEvidence}
-                        onClick={() => handleEvidenceAudit(selectedComplaint.id)}
-                        className="btn-secondary w-full py-3"
-                      >
-                        {auditingEvidence ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Auditing…
-                          </>
-                        ) : (
-                          <>
-                            <ScanSearch className="w-4 h-4 text-primary" />
-                            {selectedComplaint.evidence_verdict
-                              ? "Re-audit Evidence"
-                              : "Audit Evidence"}
-                          </>
-                        )}
-                      </button>
-                    )}
                   </div>
 
                   {/* Footer */}
