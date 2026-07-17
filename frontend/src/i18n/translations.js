@@ -103,7 +103,27 @@ export const TRANSLATIONS = {
     "common.status": "Status",
     "common.priority": "Priority",
     "common.department": "Department",
+    "common.title": "Title",
+    "common.area": "Area",
     "common.loading": "Loading…",
+
+    // Dynamic value labels — statuses & priorities shown in badges everywhere
+    "st.Submitted": "Submitted",
+    "st.Assigned": "Assigned",
+    "st.In Progress": "In Progress",
+    "st.Resolved": "Resolved",
+    "st.Closed": "Closed",
+    "pr.Critical": "Critical",
+    "pr.High": "High",
+    "pr.Medium": "Medium",
+    "pr.Low": "Low",
+
+    // Resolution timeline step descriptions
+    "step.Submitted": "Grievance received and registered.",
+    "step.Assigned": "Assigned to the appropriate department.",
+    "step.In Progress": "Crews dispatched to resolve the issue.",
+    "step.Resolved": "Issue resolved and verified.",
+    "step.Closed": "Resolution confirmed by you. Ticket closed.",
   },
 
   hi: {
@@ -184,7 +204,25 @@ export const TRANSLATIONS = {
     "common.status": "स्थिति",
     "common.priority": "प्राथमिकता",
     "common.department": "विभाग",
+    "common.title": "शीर्षक",
+    "common.area": "क्षेत्र",
     "common.loading": "लोड हो रहा है…",
+
+    "st.Submitted": "दर्ज",
+    "st.Assigned": "सौंपा गया",
+    "st.In Progress": "प्रगति में",
+    "st.Resolved": "हल हो गया",
+    "st.Closed": "बंद",
+    "pr.Critical": "अति गंभीर",
+    "pr.High": "उच्च",
+    "pr.Medium": "मध्यम",
+    "pr.Low": "निम्न",
+
+    "step.Submitted": "शिकायत प्राप्त और दर्ज हो गई।",
+    "step.Assigned": "सही विभाग को सौंपी गई।",
+    "step.In Progress": "समाधान के लिए टीम भेजी गई।",
+    "step.Resolved": "समस्या हल और सत्यापित।",
+    "step.Closed": "आपने समाधान की पुष्टि की। टिकट बंद।",
   },
 
   mr: {
@@ -265,7 +303,25 @@ export const TRANSLATIONS = {
     "common.status": "स्थिती",
     "common.priority": "प्राधान्य",
     "common.department": "विभाग",
+    "common.title": "शीर्षक",
+    "common.area": "परिसर",
     "common.loading": "लोड होत आहे…",
+
+    "st.Submitted": "नोंदवले",
+    "st.Assigned": "सोपवले",
+    "st.In Progress": "प्रगतीपथावर",
+    "st.Resolved": "निराकरण झाले",
+    "st.Closed": "बंद",
+    "pr.Critical": "अति गंभीर",
+    "pr.High": "उच्च",
+    "pr.Medium": "मध्यम",
+    "pr.Low": "कमी",
+
+    "step.Submitted": "तक्रार प्राप्त आणि नोंदवली गेली.",
+    "step.Assigned": "योग्य विभागाकडे सोपवली.",
+    "step.In Progress": "निराकरणासाठी पथक पाठवले.",
+    "step.Resolved": "समस्या सोडवली आणि सत्यापित.",
+    "step.Closed": "तुम्ही निराकरणाची पुष्टी केली. तिकीट बंद.",
   },
 
   ta: {
@@ -346,7 +402,25 @@ export const TRANSLATIONS = {
     "common.status": "நிலை",
     "common.priority": "முன்னுரிமை",
     "common.department": "துறை",
+    "common.title": "தலைப்பு",
+    "common.area": "பகுதி",
     "common.loading": "ஏற்றப்படுகிறது…",
+
+    "st.Submitted": "சமர்ப்பிக்கப்பட்டது",
+    "st.Assigned": "ஒதுக்கப்பட்டது",
+    "st.In Progress": "நடைபெறுகிறது",
+    "st.Resolved": "தீர்க்கப்பட்டது",
+    "st.Closed": "மூடப்பட்டது",
+    "pr.Critical": "மிக அவசரம்",
+    "pr.High": "உயர்",
+    "pr.Medium": "நடுத்தரம்",
+    "pr.Low": "குறைவு",
+
+    "step.Submitted": "புகார் பெறப்பட்டு பதிவானது.",
+    "step.Assigned": "சரியான துறைக்கு ஒதுக்கப்பட்டது.",
+    "step.In Progress": "தீர்வுக்காக குழு அனுப்பப்பட்டது.",
+    "step.Resolved": "பிரச்சனை தீர்க்கப்பட்டு சரிபார்க்கப்பட்டது.",
+    "step.Closed": "நீங்கள் தீர்வை உறுதிப்படுத்தினீர்கள். டிக்கெட் மூடப்பட்டது.",
   },
 
   te: {
@@ -427,7 +501,25 @@ export const TRANSLATIONS = {
     "common.status": "స్థితి",
     "common.priority": "ప్రాధాన్యత",
     "common.department": "శాఖ",
+    "common.title": "శీర్షిక",
+    "common.area": "ప్రాంతం",
     "common.loading": "లోడ్ అవుతోంది…",
+
+    "st.Submitted": "సమర్పించబడింది",
+    "st.Assigned": "కేటాయించబడింది",
+    "st.In Progress": "పురోగతిలో",
+    "st.Resolved": "పరిష్కరించబడింది",
+    "st.Closed": "మూసివేయబడింది",
+    "pr.Critical": "అత్యవసరం",
+    "pr.High": "అధికం",
+    "pr.Medium": "మధ్యస్థం",
+    "pr.Low": "తక్కువ",
+
+    "step.Submitted": "ఫిర్యాదు అందింది మరియు నమోదైంది.",
+    "step.Assigned": "సరైన శాఖకు కేటాయించబడింది.",
+    "step.In Progress": "పరిష్కారానికి బృందం పంపబడింది.",
+    "step.Resolved": "సమస్య పరిష్కరించబడి ధృవీకరించబడింది.",
+    "step.Closed": "మీరు పరిష్కారాన్ని నిర్ధారించారు. టికెట్ మూసివేయబడింది.",
   },
 
   kn: {
@@ -508,7 +600,25 @@ export const TRANSLATIONS = {
     "common.status": "ಸ್ಥಿತಿ",
     "common.priority": "ಆದ್ಯತೆ",
     "common.department": "ಇಲಾಖೆ",
+    "common.title": "ಶೀರ್ಷಿಕೆ",
+    "common.area": "ಪ್ರದೇಶ",
     "common.loading": "ಲೋಡ್ ಆಗುತ್ತಿದೆ…",
+
+    "st.Submitted": "ಸಲ್ಲಿಸಲಾಗಿದೆ",
+    "st.Assigned": "ನಿಯೋಜಿಸಲಾಗಿದೆ",
+    "st.In Progress": "ಪ್ರಗತಿಯಲ್ಲಿದೆ",
+    "st.Resolved": "ಪರಿಹರಿಸಲಾಗಿದೆ",
+    "st.Closed": "ಮುಚ್ಚಲಾಗಿದೆ",
+    "pr.Critical": "ಅತಿ ತುರ್ತು",
+    "pr.High": "ಹೆಚ್ಚು",
+    "pr.Medium": "ಮಧ್ಯಮ",
+    "pr.Low": "ಕಡಿಮೆ",
+
+    "step.Submitted": "ದೂರು ಸ್ವೀಕರಿಸಿ ನೋಂದಾಯಿಸಲಾಗಿದೆ.",
+    "step.Assigned": "ಸರಿಯಾದ ಇಲಾಖೆಗೆ ನಿಯೋಜಿಸಲಾಗಿದೆ.",
+    "step.In Progress": "ಪರಿಹಾರಕ್ಕೆ ತಂಡ ಕಳುಹಿಸಲಾಗಿದೆ.",
+    "step.Resolved": "ಸಮಸ್ಯೆ ಪರಿಹರಿಸಿ ಪರಿಶೀಲಿಸಲಾಗಿದೆ.",
+    "step.Closed": "ನೀವು ಪರಿಹಾರವನ್ನು ದೃಢೀಕರಿಸಿದ್ದೀರಿ. ಟಿಕೆಟ್ ಮುಚ್ಚಲಾಗಿದೆ.",
   },
 
   bn: {
@@ -589,7 +699,25 @@ export const TRANSLATIONS = {
     "common.status": "অবস্থা",
     "common.priority": "অগ্রাধিকার",
     "common.department": "বিভাগ",
+    "common.title": "শিরোনাম",
+    "common.area": "এলাকা",
     "common.loading": "লোড হচ্ছে…",
+
+    "st.Submitted": "জমা হয়েছে",
+    "st.Assigned": "বরাদ্দ হয়েছে",
+    "st.In Progress": "চলমান",
+    "st.Resolved": "সমাধান হয়েছে",
+    "st.Closed": "বন্ধ",
+    "pr.Critical": "অতি জরুরি",
+    "pr.High": "উচ্চ",
+    "pr.Medium": "মাঝারি",
+    "pr.Low": "নিম্ন",
+
+    "step.Submitted": "অভিযোগ গৃহীত ও নিবন্ধিত হয়েছে।",
+    "step.Assigned": "সঠিক বিভাগে বরাদ্দ হয়েছে।",
+    "step.In Progress": "সমাধানের জন্য দল পাঠানো হয়েছে।",
+    "step.Resolved": "সমস্যা সমাধান ও যাচাই হয়েছে।",
+    "step.Closed": "আপনি সমাধান নিশ্চিত করেছেন। টিকিট বন্ধ।",
   },
 
   gu: {
@@ -670,6 +798,24 @@ export const TRANSLATIONS = {
     "common.status": "સ્થિતિ",
     "common.priority": "પ્રાથમિકતા",
     "common.department": "વિભાગ",
+    "common.title": "શીર્ષક",
+    "common.area": "વિસ્તાર",
     "common.loading": "લોડ થઈ રહ્યું છે…",
+
+    "st.Submitted": "સબમિટ થયું",
+    "st.Assigned": "સોંપાયું",
+    "st.In Progress": "પ્રગતિમાં",
+    "st.Resolved": "ઉકેલાયું",
+    "st.Closed": "બંધ",
+    "pr.Critical": "અતિ ગંભીર",
+    "pr.High": "ઉચ્ચ",
+    "pr.Medium": "મધ્યમ",
+    "pr.Low": "નિમ્ન",
+
+    "step.Submitted": "ફરિયાદ મળી અને નોંધાઈ.",
+    "step.Assigned": "યોગ્ય વિભાગને સોંપાઈ.",
+    "step.In Progress": "ઉકેલ માટે ટીમ મોકલાઈ.",
+    "step.Resolved": "સમસ્યા ઉકેલાઈ અને ચકાસાઈ.",
+    "step.Closed": "તમે ઉકેલની પુષ્ટિ કરી. ટિકિટ બંધ.",
   },
 };

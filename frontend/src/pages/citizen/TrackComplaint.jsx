@@ -307,6 +307,8 @@ function TrackComplaint() {
                     const isCompleted = idx <= activeIdx;
                     const isActive = idx === activeIdx;
                     const StepIcon = step.icon;
+                    const stLabel = t(`st.${step.label}`);
+                    const stDesc = t(`step.${step.label}`);
                     return (
                       <div key={step.label} className="flex gap-4 items-start relative">
                         <div
@@ -328,10 +330,10 @@ function TrackComplaint() {
                                 : "text-muted"
                             }`}
                           >
-                            {step.label}
+                            {stLabel === `st.${step.label}` ? step.label : stLabel}
                           </h4>
                           <p className={`text-xs mt-0.5 ${isCompleted ? "text-muted" : "text-muted/60"}`}>
-                            {step.desc}
+                            {stDesc === `step.${step.label}` ? step.desc : stDesc}
                           </p>
                         </div>
                       </div>
