@@ -10,7 +10,7 @@ export const AuthLayout = ({ children, title, subtitle }) => {
           <ShieldCheck className="w-8 h-8 text-white" />
         </div>
         <h1 className="text-2xl font-bold text-text leading-tight">
-          Grievance Portal
+          Samadhan <span className="text-primary font-extrabold">समाधान</span>
         </h1>
         <p className="text-[10px] text-primary font-bold tracking-widest uppercase mt-1">
           Ministry of Public Administration &amp; Grievances

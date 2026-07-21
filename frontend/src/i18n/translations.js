@@ -28,7 +28,7 @@ export const TRANSLATIONS = {
     "nav.scoreboard": "Scoreboard",
     "nav.signin": "Sign In",
     "nav.womenSafety": "Women Safety",
-    "nav.portal": "Grievance Portal",
+    "nav.portal": "Samadhan",
     "nav.tagline": "Smart Governance System",
     "nav.signedIn": "Signed in",
 
@@ -134,7 +134,7 @@ export const TRANSLATIONS = {
     "nav.scoreboard": "स्कोरबोर्ड",
     "nav.signin": "साइन इन",
     "nav.womenSafety": "महिला सुरक्षा",
-    "nav.portal": "शिकायत पोर्टल",
+    "nav.portal": "Samadhan",
     "nav.tagline": "स्मार्ट गवर्नेंस सिस्टम",
     "nav.signedIn": "लॉग इन",
 
@@ -233,7 +233,7 @@ export const TRANSLATIONS = {
     "nav.scoreboard": "स्कोअरबोर्ड",
     "nav.signin": "साइन इन",
     "nav.womenSafety": "महिला सुरक्षा",
-    "nav.portal": "तक्रार पोर्टल",
+    "nav.portal": "Samadhan",
     "nav.tagline": "स्मार्ट गव्हर्नन्स सिस्टम",
     "nav.signedIn": "लॉग इन",
 
@@ -332,7 +332,7 @@ export const TRANSLATIONS = {
     "nav.scoreboard": "மதிப்பெண் பலகை",
     "nav.signin": "உள்நுழை",
     "nav.womenSafety": "பெண்கள் பாதுகாப்பு",
-    "nav.portal": "புகார் போர்டல்",
+    "nav.portal": "Samadhan",
     "nav.tagline": "ஸ்மார்ட் ஆட்சி அமைப்பு",
     "nav.signedIn": "உள்நுழைந்துள்ளீர்",
 
@@ -431,7 +431,7 @@ export const TRANSLATIONS = {
     "nav.scoreboard": "స్కోర్‌బోర్డ్",
     "nav.signin": "సైన్ ఇన్",
     "nav.womenSafety": "మహిళా భద్రత",
-    "nav.portal": "ఫిర్యాదు పోర్టల్",
+    "nav.portal": "Samadhan",
     "nav.tagline": "స్మార్ట్ గవర్నెన్స్ సిస్టమ్",
     "nav.signedIn": "సైన్ ఇన్ అయ్యారు",
 
@@ -530,7 +530,7 @@ export const TRANSLATIONS = {
     "nav.scoreboard": "ಸ್ಕೋರ್‌ಬೋರ್ಡ್",
     "nav.signin": "ಸೈನ್ ಇನ್",
     "nav.womenSafety": "ಮಹಿಳಾ ಸುರಕ್ಷತೆ",
-    "nav.portal": "ದೂರು ಪೋರ್ಟಲ್",
+    "nav.portal": "Samadhan",
     "nav.tagline": "ಸ್ಮಾರ್ಟ್ ಆಡಳಿತ ವ್ಯವಸ್ಥೆ",
     "nav.signedIn": "ಸೈನ್ ಇನ್ ಆಗಿದ್ದೀರಿ",
 
@@ -629,7 +629,7 @@ export const TRANSLATIONS = {
     "nav.scoreboard": "স্কোরবোর্ড",
     "nav.signin": "সাইন ইন",
     "nav.womenSafety": "নারী নিরাপত্তা",
-    "nav.portal": "অভিযোগ পোর্টাল",
+    "nav.portal": "Samadhan",
     "nav.tagline": "স্মার্ট গভর্ন্যান্স সিস্টেম",
     "nav.signedIn": "সাইন ইন করা আছে",
 
@@ -728,7 +728,7 @@ export const TRANSLATIONS = {
     "nav.scoreboard": "સ્કોરબોર્ડ",
     "nav.signin": "સાઇન ઇન",
     "nav.womenSafety": "મહિલા સુરક્ષા",
-    "nav.portal": "ફરિયાદ પોર્ટલ",
+    "nav.portal": "Samadhan",
     "nav.tagline": "સ્માર્ટ ગવર્નન્સ સિસ્ટમ",
     "nav.signedIn": "સાઇન ઇન છો",
 

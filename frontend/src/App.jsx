@@ -176,7 +176,7 @@ function App() {
             </main>
 
             <footer className="text-center text-xs text-muted py-6 border-t border-border bg-surface">
-              <p>© 2026 Grievance Lodging and Tracking System</p>
+              <p>© 2026 Samadhan · Grievance Lodging & Tracking System</p>
               <p className="font-medium mt-1">Smart Governance · Secure by Design</p>
             </footer>
           </div>

@@ -1,6 +1,6 @@
-# 🔧 Technical Guide — How Every Feature Is Integrated
+  # 🔧 Technical Guide — How Every Feature Is Integrated
 > The engineering companion: file paths, data flow, and design decisions for each feature.
-> Sibling docs: `SLIDES.md` (deck bullets) · `PPT_BLUEPRINT.md` (full deck plan) · `FEATURES_EXPLAINED.md` (what & why).
+> Sibling docs: `SLIDES.md`(image.png) (deck bullets) · `PPT_BLUEPRINT.md` (full deck plan) · `FEATURES_EXPLAINED.md` (what & why).
 
 ---
 

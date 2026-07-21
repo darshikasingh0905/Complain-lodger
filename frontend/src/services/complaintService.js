@@ -191,7 +191,9 @@ export const resolveWithProof = async (id, fixImageFile, force = false) => {
     try {
       const res = await http.post(`/complaints/${numericIdOf(id)}/resolve-with-proof`, form, {
         headers: { "Content-Type": "multipart/form-data" },
-        timeout: 120000, // before/after vision audit runs inline
+        // Vision audit runs inline; first llama3.2-vision call on CPU can be
+        // slow (model load + two images), so allow a generous window.
+        timeout: 240000,
       });
       return normalizeComplaint(res.data);
     } catch (err) {

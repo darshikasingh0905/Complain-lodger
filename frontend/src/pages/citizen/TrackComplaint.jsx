@@ -56,7 +56,7 @@ const whatsappShareUrl = (c) => {
     `📍 ${c.area}\n` +
     `Status: ${c.status} • Priority: ${level}\n` +
     `Department: ${c.department}\n` +
-    `— via Grievance Portal, Smart Governance System`;
+    `— via Samadhan, Smart Governance System`;
   return `https://wa.me/?text=${encodeURIComponent(text)}`;
 };
 

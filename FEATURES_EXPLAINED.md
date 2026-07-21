@@ -1,4 +1,4 @@
-# 📖 Features Explained — What & Why
+~# 📖 Features Explained — What & Why
 > The deep-dive companion to `SLIDES.md`. For Q&A prep, judges' questions, and onboarding teammates.
 
 ---

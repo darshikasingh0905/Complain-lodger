@@ -35,7 +35,6 @@ const CITIZEN_NAV = [
 
 const ADMIN_NAV = [
   { path: "/admin", label: "Admin Panel", icon: LayoutDashboard },
-  { path: "/evidence", label: "Evidence Audit", icon: ScanSearch },
   { path: "/map", label: "Hotspot Map", icon: Map },
   { path: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
