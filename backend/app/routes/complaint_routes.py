@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile,
 from sqlalchemy.orm import Session
 from app.database.db import get_db
 from app.schemas.complaint import ComplaintCreate, ComplaintResponse, ComplaintStatusUpdate, ComplaintAIUpdate, EvidenceAuditResult, ConfirmResolutionRequest
+from app.schemas.complaint import ComplaintCreate, ComplaintResponse, ComplaintStatusUpdate, ComplaintAIUpdate, EvidenceAuditResult, ConfirmResolutionRequest
 import app.services.complaint_service as service
 from app.services import ai_service
 
@@ -24,12 +25,51 @@ def get_map_data(
     department: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
+def get_map_data(
+    role: Optional[str] = None,
+    department: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
     """
     Returns a lean payload of all complaints that have GPS coordinates,
     used by the frontend Leaflet heatmap to render pins and density layers.
     Only returns fields required for map rendering — no large text bodies.
     """
     from app.models.complaint import Complaint
+    from sqlalchemy import or_
+    
+    query = db.query(
+        Complaint.id,
+        Complaint.latitude,
+        Complaint.longitude,
+        Complaint.department,
+        Complaint.priority,
+        Complaint.status,
+        Complaint.description,
+        Complaint.address,
+        Complaint.category,
+    ).filter(Complaint.latitude.isnot(None), Complaint.longitude.isnot(None))
+    
+    if role == "department_admin" and department:
+        name = department.lower().strip()
+        dept_filters = []
+        if "roads" in name:
+            dept_filters.append(Complaint.department == "Roads and Drainage")
+        elif "electricity" in name:
+            dept_filters.append(Complaint.department == "Electricity Department")
+        elif "water" in name:
+            dept_filters.append(Complaint.department == "Water Supply Department")
+        elif "sanitation" in name or "garbage" in name or "solid waste" in name:
+            dept_filters.append(Complaint.department == "Solid Waste Management")
+        elif "health" in name:
+            dept_filters.append(Complaint.department == "Public Health")
+        elif "transport" in name or "traffic" in name:
+            dept_filters.append(Complaint.department == "Traffic Police")
+        else:
+            dept_filters.append(Complaint.department.ilike(f"%{department}%"))
+        query = query.filter(or_(*dept_filters))
+        
+    complaints = query.all()
     from sqlalchemy import or_
     
     query = db.query(
@@ -78,6 +118,7 @@ def get_map_data(
         }
         for c in complaints
     ]
+
 
 
 @router.post("/submit", response_model=ComplaintResponse, status_code=status.HTTP_201_CREATED)
@@ -153,13 +194,17 @@ def create_new_complaint(complaint: ComplaintCreate, db: Session = Depends(get_d
 @router.get("/", response_model=List[ComplaintResponse])
 def read_all_complaints(
     role: Optional[str] = None,
+    role: Optional[str] = None,
     department: Optional[str] = None, 
     status: Optional[str] = None, 
     db: Session = Depends(get_db)
 ):
     """
     List all filed grievances. Supports optional parameters 'role', 'department' or 'status'.
+    List all filed grievances. Supports optional parameters 'role', 'department' or 'status'.
     """
+    if role == "department_admin" and department:
+        return service.get_complaints_by_admin_dept(db, admin_department=department, status=status)
     if role == "department_admin" and department:
         return service.get_complaints_by_admin_dept(db, admin_department=department, status=status)
     return service.get_complaints(db, department=department, status=status)

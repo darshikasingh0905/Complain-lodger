@@ -1,9 +1,11 @@
 from typing import List, Optional
 from datetime import datetime
+from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from app.models.complaint import Complaint
 from app.schemas.complaint import ComplaintCreate, ComplaintStatusUpdate, ComplaintAIUpdate
+from app.services import ai_service, ai_classifier, priority_engine, notification_service
 from app.services import ai_service, ai_classifier, priority_engine, notification_service
 
 def recalculate_complaint_priority(db: Session, complaint_id: int, ai_result: dict = None) -> Optional[Complaint]:
@@ -36,6 +38,8 @@ def recalculate_complaint_priority(db: Session, complaint_id: int, ai_result: di
         category=db_obj.category or "",
         created_at=db_obj.created_at,
         status=db_obj.status or "Submitted",
+        ai_metadata=ai_metadata,
+        is_escalated=bool(db_obj.is_escalated)
         ai_metadata=ai_metadata,
         is_escalated=bool(db_obj.is_escalated)
     )
@@ -112,9 +116,62 @@ def check_sla_and_escalate(db: Session):
     except Exception as e:
         print(f"[SLA Checker] Error during SLA escalation run: {e}")
 
+def check_sla_and_escalate(db: Session):
+    """
+    Checks all complaints in Assigned or In Progress states against their SLA limits.
+    Escalates them if they exceed the duration limit.
+    """
+    try:
+        # SLA hour limits based on priority
+        SLA_LIMITS = {
+            "Critical": 24,
+            "High": 72,      # 3 days
+            "Medium": 168,   # 7 days
+            "Low": 336       # 14 days
+        }
+        
+        # Look for complaints in Assigned or In Progress
+        complaints = db.query(Complaint).filter(
+            Complaint.status.in_(["Assigned", "In Progress"]),
+            or_(Complaint.is_escalated == False, Complaint.is_escalated == None)
+        ).all()
+        
+        for c in complaints:
+            if not c.created_at:
+                continue
+                
+            priority = c.priorityLevel or c.priority or "Medium"
+            limit_hours = SLA_LIMITS.get(priority, 168)
+            
+            elapsed_hours = (datetime.now() - c.created_at).total_seconds() / 3600
+            
+            if elapsed_hours >= limit_hours:
+                # Escalation trigger!
+                c.is_escalated = True
+                print(f"[SLA Checker] Escalation triggered for Complaint #{c.id} ({priority} priority, pending {elapsed_hours:.1f} hours, limit {limit_hours} hours).")
+                
+                # Notify supervisor and citizen
+                escalation_msg = f"Grievance Ticket #{c.id} has exceeded its SLA of {limit_hours} hours and has been escalated."
+                notification_service.create_notification(db, c.id, c.citizen_phone, escalation_msg, "escalation")
+                
+                citizen_msg = f"Your grievance Ticket #{c.id} has been escalated to senior supervisor review due to resolution delay."
+                notification_service.create_notification(db, c.id, c.citizen_phone, citizen_msg, "escalation")
+                
+                db.commit()
+                # Recalculate priority with the new escalation boost
+                recalculate_complaint_priority(db, c.id)
+                
+    except Exception as e:
+        print(f"[SLA Checker] Error during SLA escalation run: {e}")
+
 def refresh_pending_times(db: Session):
     """Refresh priorities for all active/pending complaints to reflect elapsed time pending."""
     try:
+        # 1. First run the SLA escalator check
+        check_sla_and_escalate(db)
+        
+        # 2. Then recalculate other unresolved complaints
+        unresolved = db.query(Complaint).filter(Complaint.status.in_(["Submitted", "Assigned", "In Progress"])).all()
         # 1. First run the SLA escalator check
         check_sla_and_escalate(db)
         
@@ -223,6 +280,35 @@ def get_complaints_by_admin_dept(db: Session, admin_department: str, status: Opt
         
     return query.order_by(Complaint.created_at.desc()).all()
 
+def get_complaints_by_admin_dept(db: Session, admin_department: str, status: Optional[str] = None) -> List[Complaint]:
+    """Retrieves list of complaints filtered flexibly by admin department mapping."""
+    refresh_pending_times(db)
+    query = db.query(Complaint)
+    
+    name = admin_department.lower().strip()
+    dept_filters = []
+    if "roads" in name:
+        dept_filters.append(Complaint.department == "Roads and Drainage")
+    elif "electricity" in name:
+        dept_filters.append(Complaint.department == "Electricity Department")
+    elif "water" in name:
+        dept_filters.append(Complaint.department == "Water Supply Department")
+    elif "sanitation" in name or "garbage" in name or "solid waste" in name:
+        dept_filters.append(Complaint.department == "Solid Waste Management")
+    elif "health" in name:
+        dept_filters.append(Complaint.department == "Public Health")
+    elif "transport" in name or "traffic" in name:
+        dept_filters.append(Complaint.department == "Traffic Police")
+    else:
+        dept_filters.append(Complaint.department.ilike(f"%{admin_department}%"))
+        
+    query = query.filter(or_(*dept_filters))
+    
+    if status:
+        query = query.filter(Complaint.status == status)
+        
+    return query.order_by(Complaint.created_at.desc()).all()
+
 def get_complaint_by_id(db: Session, complaint_id: int) -> Optional[Complaint]:
     """Queries database for grievance by integer ID."""
     refresh_pending_times(db)
@@ -256,7 +342,21 @@ def update_complaint_status(db: Session, complaint_id: int, status: str) -> Opti
         return None
         
     old_status = db_obj.status
+        
+    old_status = db_obj.status
     db_obj.status = status
+    
+    # If reopened, reset escalation status
+    if status == "In Progress" and old_status in ["Resolved", "Closed"]:
+        db_obj.is_escalated = False
+        
+        # Notify assigned officer
+        officer_msg = f"[OFFICER ALERT] Complaint #{db_obj.id} has been REOPENED by the citizen. Please resume resolution immediately."
+        print(f"\n=================== [OFFICER MOCK NOTIFICATION] ===================")
+        print(f"[*] Dispatching internal alert to Assigned Officer: {db_obj.assigned_officer or 'Officer Sharma'}")
+        print(f"[ALERT Message]: \"{officer_msg}\"")
+        print(f"===================================================================\n")
+        
     
     # If reopened, reset escalation status
     if status == "In Progress" and old_status in ["Resolved", "Closed"]:
@@ -271,6 +371,10 @@ def update_complaint_status(db: Session, complaint_id: int, status: str) -> Opti
         
     db.commit()
     db.refresh(db_obj)
+    
+    # Create notification for status change
+    msg = f"Your grievance Ticket #{complaint_id} status has been updated to '{status}'."
+    notification_service.create_notification(db, complaint_id, db_obj.citizen_phone, msg, "status_change")
     
     # Create notification for status change
     msg = f"Your grievance Ticket #{complaint_id} status has been updated to '{status}'."
@@ -396,6 +500,7 @@ def update_evidence_audit(
     return db_obj
 
 def get_analytics_data(db: Session, admin_department: Optional[str] = None):
+def get_analytics_data(db: Session, admin_department: Optional[str] = None):
     """
     Computes chronological trends, department counts, priority ratios,
     and emerging high-risk hotspot surges by comparing complaint velocities.
@@ -403,6 +508,25 @@ def get_analytics_data(db: Session, admin_department: Optional[str] = None):
     refresh_pending_times(db)
     from sqlalchemy import func, and_, or_, case
     from datetime import datetime, timedelta
+    
+    # Resolve department filters if provided
+    dept_filters = []
+    if admin_department:
+        name = admin_department.lower().strip()
+        if "roads" in name:
+            dept_filters.append(Complaint.department == "Roads and Drainage")
+        elif "electricity" in name:
+            dept_filters.append(Complaint.department == "Electricity Department")
+        elif "water" in name:
+            dept_filters.append(Complaint.department == "Water Supply Department")
+        elif "sanitation" in name or "garbage" in name or "solid waste" in name:
+            dept_filters.append(Complaint.department == "Solid Waste Management")
+        elif "health" in name:
+            dept_filters.append(Complaint.department == "Public Health")
+        elif "transport" in name or "traffic" in name:
+            dept_filters.append(Complaint.department == "Traffic Police")
+        else:
+            dept_filters.append(Complaint.department.ilike(f"%{admin_department}%"))
     
     # Resolve department filters if provided
     dept_filters = []
@@ -431,7 +555,11 @@ def get_analytics_data(db: Session, admin_department: Optional[str] = None):
     daily_query = db.query(func.date(Complaint.created_at).label("day"), func.count(Complaint.id).label("count"))
     if dept_filters:
         daily_query = daily_query.filter(or_(*dept_filters))
+    daily_query = db.query(func.date(Complaint.created_at).label("day"), func.count(Complaint.id).label("count"))
+    if dept_filters:
+        daily_query = daily_query.filter(or_(*dept_filters))
     daily_results = (
+        daily_query.filter(Complaint.created_at >= datetime.combine(start_date, datetime.min.time()))
         daily_query.filter(Complaint.created_at >= datetime.combine(start_date, datetime.min.time()))
         .group_by(func.date(Complaint.created_at))
         .all()
@@ -457,7 +585,11 @@ def get_analytics_data(db: Session, admin_department: Optional[str] = None):
     dept_query = db.query(Complaint.department, func.count(Complaint.id).label("count"))
     if dept_filters:
         dept_query = dept_query.filter(or_(*dept_filters))
+    dept_query = db.query(Complaint.department, func.count(Complaint.id).label("count"))
+    if dept_filters:
+        dept_query = dept_query.filter(or_(*dept_filters))
     dept_results = (
+        dept_query.group_by(Complaint.department)
         dept_query.group_by(Complaint.department)
         .all()
     )
@@ -470,7 +602,11 @@ def get_analytics_data(db: Session, admin_department: Optional[str] = None):
     priority_query = db.query(Complaint.priority, func.count(Complaint.id).label("count"))
     if dept_filters:
         priority_query = priority_query.filter(or_(*dept_filters))
+    priority_query = db.query(Complaint.priority, func.count(Complaint.id).label("count"))
+    if dept_filters:
+        priority_query = priority_query.filter(or_(*dept_filters))
     priority_results = (
+        priority_query.group_by(Complaint.priority)
         priority_query.group_by(Complaint.priority)
         .all()
     )

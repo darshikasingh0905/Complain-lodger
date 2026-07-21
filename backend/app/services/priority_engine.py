@@ -59,6 +59,8 @@ def calculate_priority(
     status: str,
     ai_metadata: dict,
     is_escalated: bool = False
+    ai_metadata: dict,
+    is_escalated: bool = False
 ) -> dict:
     """
     Computes a transparent rule-based priority score between 0 and 100.
@@ -113,6 +115,7 @@ def calculate_priority(
         
     # 7. Time Pending
     time_pending_score = 0
+    if status not in ["Resolved", "Closed"] and created_at:
     if status not in ["Resolved", "Closed"] and created_at:
         hours_pending = (datetime.now() - created_at).total_seconds() / 3600
         # 1 point per 24 hours pending, capped at 5

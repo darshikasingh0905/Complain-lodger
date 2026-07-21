@@ -9,6 +9,8 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState(null); // 'citizen' | 'admin' | null
   const [userData, setUserData] = useState(null);
+  const [adminRole, setAdminRole] = useState(null); // 'super_admin' | 'department_admin' | null
+  const [adminDepartment, setAdminDepartment] = useState(null); // e.g. 'Roads', 'Electricity', ...
   const [loading, setLoading] = useState(true);
 
   // Initialize demo accounts and restore login session on launch.
@@ -59,6 +61,8 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(true);
     setUserRole(session.role);
     setUserData(session.user);
+    setAdminRole(session.adminRole || 'super_admin');
+    setAdminDepartment(session.adminDepartment || null);
     return session;
   };
 
@@ -68,12 +72,16 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
     setUserRole(null);
     setUserData(null);
+    setAdminRole(null);
+    setAdminDepartment(null);
   };
 
   const valObject = {
     isAuthenticated,
     userRole,
     userData,
+    adminRole,
+    adminDepartment,
     loading,
     login,
     logout,
